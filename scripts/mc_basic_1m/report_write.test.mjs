@@ -329,7 +329,7 @@ describe('report.mjs: --target', () => {
     }
   });
 
-  it('--target next and next15 print their banner, Trend4 run rules and under 1.5R bucket, and leave last shown alone', () => {
+  it('--target next and next15 print their banner, Avg4 run rules and under 1.5R bucket, and leave last shown alone', () => {
     const origFile = writeJson('orig.json', snapshot({ lastRow: ORIG_LAST }));
     for (const mode of ['next', 'next15']) {
       const c = capture();
@@ -337,8 +337,9 @@ describe('report.mjs: --target', () => {
       assert.deepEqual(c.err, []);
       const out = c.out.join('');
       assert.match(out, new RegExp(`TARGET MODE ${mode}: `), mode);
-      assert.match(out, /judged by Trend4/, mode);
-      assert.match(out, /== HTF-a: Trend4\(15m Mny Flow\) /, mode);
+      assert.match(out, /judged by Avg4/, mode);
+      assert.match(out, /a counter or flat bar is filtered/, mode);
+      assert.match(out, /== HTF-a: Avg4\(15m Mny Flow\) /, mode);
       assert.match(out, new RegExp(`NOT RECORDED: .*${mode} trades cannot be drawn`), mode);
       assert.match(out, / \+ outside band \d+ \+ under 1\.5R \d+ \+ closed trades /, mode);
       assert.doesNotMatch(out, / \+ no stop /, mode);
@@ -346,12 +347,12 @@ describe('report.mjs: --target', () => {
     assert.equal(exists('trade_log.json'), false);
   });
 
-  it('sr, 1R, srsl and band reports print no under 1.5R bucket and no Trend4 rule', () => {
+  it('sr, 1R, srsl and band reports print no under 1.5R bucket and no Avg4 rule', () => {
     const origFile = writeJson('orig.json', snapshot({ lastRow: ORIG_LAST }));
     for (const mode of ['sr', '1R', 'srsl', 'band']) {
       const c = capture();
       assert.equal(main(argv(origFile, '--target', mode), c.io), 0);
-      assert.doesNotMatch(c.out.join(''), / \+ under 1\.5R |Trend4/, mode);
+      assert.doesNotMatch(c.out.join(''), / \+ under 1\.5R |Avg4/, mode);
     }
   });
 });

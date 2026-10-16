@@ -1463,7 +1463,7 @@ describe('band mode (Cipher Resistance and Support on the trigger row)', () => {
   });
 });
 
-describe('next and next15 modes (Trend4 Mny Flow, past Cipher line target, 1.5R minimum)', () => {
+describe('next and next15 modes (Avg4 Mny Flow, past Cipher line target, 1.5R minimum)', () => {
   const runN = (m, target = 'next', runId = 'HTF-a') => {
     const res = simulate(toSnapshot(m), { target });
     for (const r of res.runs) for (const s of [r.whole, r.first, r.second]) assert.ok(s.funnel.reconciles);
@@ -1486,33 +1486,52 @@ describe('next and next15 modes (Trend4 Mny Flow, past Cipher line target, 1.5R 
     vals.forEach((v, j) => set15(m, m.m15.t[qi - vals.length + 1 + j], { mf: v }));
   };
 
-  it('mfTrend is the sign of the 4-value least-squares slope; a null or too few rows is 0', () => {
-    const d = { mf15: [10, 8, 6, 7, 1, 5, 9, 8, 3, 3, 3, 3, null, 1, 2, 3] };
-    assert.equal(mfTrend(d, 3), -1);
-    assert.equal(mfTrend(d, 7), 1);
-    assert.equal(mfTrend(d, 11), 0);
-    assert.equal(mfTrend(d, 15), 0);
-    assert.equal(mfTrend(d, 2), 0);
+  it('mfTrend is 1 or -1 only when the 4-bar average and the latest bar move the same way', () => {
+    const t = (vals) => mfTrend({ mf15: vals }, vals.length - 1);
+    assert.equal(t([5, 1, 2, 3, 6]), 1);
+    assert.equal(t([10, 8, 6, 7, 5]), -1);
+    assert.equal(t([-5, 0, 10, 9, 8]), 0);   // counter bar: average up, latest bar down
+    assert.equal(t([12, 0, 2, 4, 6]), 0);    // counter bar: average down, latest bar up
+    assert.equal(t([1, 2, 3, 4, 4]), 0);     // flat latest bar
+    assert.equal(t([4, 9, 1, 2, 4]), 0);     // flat average
+    assert.equal(t([null, 1, 2, 3, 6]), 0);  // the oldest value of the previous average is missing
+    assert.equal(t([1, 2, 3, null, 6]), 0);
+    assert.equal(t([1, 2, 3, 6]), 0);        // too few rows
+    assert.equal(mfTrend({ mf15: [9, 5, 1, 2, 3, 6] }, 5), 1);  // uses only rows qi-4..qi
   });
 
-  it('a one-bar rise inside a falling Trend4 is filtered in next mode but passes in band mode', () => {
+  it('a one-bar rise against a falling 4-bar average is filtered in next mode but passes in band mode', () => {
     const { m, k } = longN(5010, 4997);
-    setLastMf(m, k, [10, 8, 6, 7]);
-    const n = runN(m).r;
-    assert.equal(n.triggers[0].outcome, 'filtered');
+    setLastMf(m, k, [10, 10, 8, 6, 7]);
+    assert.equal(runN(m).r.triggers[0].outcome, 'filtered');
     assert.equal(runN(m, 'band').r.triggers[0].outcome, 'trade');
   });
 
-  it('a one-bar dip inside a rising Trend4 trades in next mode but is filtered in band mode', () => {
+  it('a counter bar against a rising 4-bar average is filtered in next and next15 modes', () => {
     const { m, k } = longN(5010, 4997);
-    setLastMf(m, k, [1, 5, 9, 8]);
-    assert.equal(runN(m).r.triggers[0].outcome, 'trade');
-    assert.equal(runN(m, 'band').r.triggers[0].outcome, 'filtered');
+    setLastMf(m, k, [-5, 0, 10, 9, 8]);
+    assert.equal(runN(m).r.triggers[0].outcome, 'filtered');
+    assert.equal(runN(m, 'next15').r.triggers[0].outcome, 'filtered');
   });
 
-  it('a null in the last 4 closed 15m Mny Flow values is filtered', () => {
+  it('a rising 4-bar average with a rising latest bar trades in next mode', () => {
     const { m, k } = longN(5010, 4997);
-    setLastMf(m, k, [null, 300, 301, 302]);
+    setLastMf(m, k, [5, 1, 2, 3, 6]);
+    assert.equal(runN(m).r.triggers[0].outcome, 'trade');
+  });
+
+  it('a short needs a falling 4-bar average and a falling latest bar', () => {
+    const pass = shortN(5003, 4990);
+    setLastMf(pass.m, pass.k, [10, 8, 6, 7, 5]);
+    const fail = shortN(5003, 4990);
+    setLastMf(fail.m, fail.k, [10, 8, 6, 5, 6]);
+    assert.equal(runN(pass.m).r.triggers[0].outcome, 'trade');
+    assert.equal(runN(fail.m).r.triggers[0].outcome, 'filtered');
+  });
+
+  it('a null in the last 5 closed 15m Mny Flow values is filtered', () => {
+    const { m, k } = longN(5010, 4997);
+    setLastMf(m, k, [null, 300, 301, 302, 303]);
     assert.equal(runN(m).r.triggers[0].outcome, 'filtered');
   });
 

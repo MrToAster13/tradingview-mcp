@@ -10,7 +10,7 @@
  * (longs) or Support (shorts) plotted on the trigger row and stops 1 tick beyond the other one.
  * --target next keeps the band stop and targets the nearest past Cipher line beyond E, skipping
  * trades under 1.5R; --target next15 targets the nearest past line at least 1.5R away. Both judge
- * 15m Mny Flow by Trend4 (the slope of its last 4 closed values).
+ * 15m Mny Flow by Avg4 (its 4-bar average must move the trade's way, and the latest bar must not move against it).
  * None of 1R, srsl, band, next and next15 can be combined with --forward.
  *
  * main returns the exit code: 0 on success, 1 on any error (nothing is printed on a lock or log
@@ -105,7 +105,8 @@ export function renderReport(result) {
       + ' Resistance for a short); target is the nearest past Cipher line (any Resistance or Support value plotted at or'
       + ` before the trigger row) beyond E${info.targetMode === 'next' ? '; a reward under 1.5R is skipped as "under 1.5R"'
         : ' that is at least 1.5R away; none is "under 1.5R"'}`);
-    out.push('  15m Mny Flow is judged by Trend4: the sign of the least-squares slope of its last 4 closed 15m values');
+    out.push('  15m Mny Flow is judged by Avg4: its 4-bar average of closed 15m values must rise for a long (fall for a short),'
+      + ' and the latest closed 15m bar must move the same way (a counter or flat bar is filtered)');
     out.push(`  NOT RECORDED: this report does not change last shown; draw still uses the last SR report, and ${info.targetMode}`
       + ' trades cannot be drawn');
   }

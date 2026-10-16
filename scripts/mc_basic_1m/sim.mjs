@@ -38,9 +38,9 @@ export const RUN_RULES = Object.freeze({
 });
 /** Run rules under the next and next15 target modes, where Mny Flow is judged by its trend. */
 export const RUN_RULES_TREND = Object.freeze({
-  'HTF-a': 'Trend4(15m Mny Flow)',
-  'HTF-b': 'at least 2 of Trend4(15m Mny Flow), Rising(15m Blue Wave), Rising(15m RSI)',
-  'HTF-c': 'all 3 of Trend4(15m Mny Flow), Rising(15m Blue Wave), Rising(15m RSI)',
+  'HTF-a': 'Avg4(15m Mny Flow)',
+  'HTF-b': 'at least 2 of Avg4(15m Mny Flow), Rising(15m Blue Wave), Rising(15m RSI)',
+  'HTF-c': 'all 3 of Avg4(15m Mny Flow), Rising(15m Blue Wave), Rising(15m RSI)',
 });
 
 const PLOT = Object.freeze({ BLUE_WAVE: 2, MNY_FLOW: 4, BUY: 6, CROSS_DOWN: 8, RSI: 15, STO_RSI: 16 });
@@ -54,7 +54,7 @@ const WARMUP_15M_ROWS = 100;  // F's last closed 15m row index >= 100
 const STOP_MIN_Q = 8;         // 2 points
 const STOP_MAX_Q = 32;        // 8 points
 const FEES_NQ = 12;           // $3 round trip in quarter dollars
-const MF_TREND_BARS = 4;      // Trend4: least-squares slope over the last 4 closed 15m Mny Flow values
+const MF_AVG_BARS = 4;        // Avg4: 4-bar simple average of closed 15m Mny Flow values
 const MIN_RR_NUM = 3;         // next and next15 modes: reward / risk >= 3/2
 const MIN_RR_DEN = 2;
 const ROLL_MONTHS = Object.freeze([3, 6, 9, 12]);
@@ -70,7 +70,7 @@ const ROLL_MONTHS = Object.freeze([3, 6, 9, 12]);
  * Support value plotted on a row at or before the trigger row. A reward under 1.5 times the risk is
  * outcome under_rr; no line beyond E is no_target. 'next15' is the same, except the target is the
  * nearest past line at least 1.5R from E (under_rr when there is none). Both modes judge 15m Mny Flow
- * by Trend4 instead of a one-bar change (user rule, 2026-10-16).
+ * by Avg4 instead of a one-bar change (user rule, 2026-10-16).
  */
 export const TARGET_MODES = Object.freeze(['sr', '1R', 'srsl', 'band', 'next', 'next15']);
 const NEXT_MODES = Object.freeze(['next', 'next15']);
@@ -429,24 +429,23 @@ const falling = (x, prev) => x !== null && prev !== null && x < prev;
 const moved = (side) => (side === 'long' ? rising : falling);
 
 /**
- * Trend4 of 15m Mny Flow at last closed 15m row qi: the sign of the least-squares slope through the
- * last MF_TREND_BARS values, which smooths a choppy wave into one direction. Returns 1, -1, or 0
- * (flat, too few rows, or a missing value).
+ * Avg4 of 15m Mny Flow at last closed 15m row qi (user rule, 2026-10-16): 1 when the 4-bar simple
+ * average of Mny Flow rose from row qi-1 to row qi and the latest closed bar also rose, -1 for the
+ * mirror, else 0. A latest bar that moved against the average, or did not move, is a counter bar
+ * and gives 0. SMA4(qi) - SMA4(qi-1) = (mf[qi] - mf[qi-4]) / 4, so the sign is taken from that
+ * difference directly. Too few rows or a missing value in mf[qi-4..qi] gives 0.
  */
 export function mfTrend(d, qi) {
-  if (qi < MF_TREND_BARS - 1) return 0;
-  let num = 0;
-  for (let j = 0; j < MF_TREND_BARS; j++) {
-    const y = d.mf15[qi - MF_TREND_BARS + 1 + j];
-    if (y === null) return 0;
-    num += (2 * j - (MF_TREND_BARS - 1)) * y;
-  }
-  return Math.sign(num);
+  if (qi < MF_AVG_BARS) return 0;
+  for (let j = qi - MF_AVG_BARS; j <= qi; j++) if (d.mf15[j] === null) return 0;
+  const avg = Math.sign(d.mf15[qi] - d.mf15[qi - MF_AVG_BARS]);
+  const bar = Math.sign(d.mf15[qi] - d.mf15[qi - 1]);
+  return avg !== 0 && bar === avg ? avg : 0;
 }
 
 /**
  * The run's 15m filter at decision row i, on the last closed 15m row and the one before it.
- * mfMode 'trend' judges Mny Flow by Trend4 instead of the one-bar change.
+ * mfMode 'trend' judges Mny Flow by Avg4 instead of the one-bar change.
  */
 export function filter15(d, runId, side, i, mfMode = 'bar') {
   const qi = d.q[i];
