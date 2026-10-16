@@ -369,8 +369,8 @@ describe('entry on the trigger row', () => {
     assert.equal(t.eQ, Q(5000.25));
     assert.equal(t.open, true);
     assert.equal(res.lastCloseQ, Q(5000));
-    // (5000 - 5000.25) * 4 * 5 - 12 = -17 quarter dollars.
-    assert.equal(fmtDollarsNq(t.markNq), '-4.25');
+    // (5000 - 5000.25) * 4 * 5 - 4 = -9 quarter dollars.
+    assert.equal(fmtDollarsNq(t.markNq), '-2.25');
   });
 
   it('expired, cancelled and ignored_window stay in the funnel with zero counts', () => {
@@ -662,7 +662,7 @@ describe('exits', () => {
     assert.equal(t.exitCase, 3);
     assert.equal(t.reason, 'stop');
     assert.equal(t.exitQ, Q(4995.5));
-    assert.equal(fmtDollarsNq(t.nq), '-31.75');
+    assert.equal(fmtDollarsNq(t.nq), '-29.75');
     assert.equal(fmtDollarsNq(t.grossNq), '-26.25');
     assert.equal(t.stopTargetAlso, true);
   });
@@ -673,7 +673,7 @@ describe('exits', () => {
     const t = run(m).r.trades[0];
     assert.equal(t.exitCase, 1);
     assert.equal(t.exitQ, Q(4989.75));
-    assert.equal(fmtDollarsNq(t.nq), '-60.50');
+    assert.equal(fmtDollarsNq(t.nq), '-58.50');
     assert.equal(fmtDollarsNq(t.grossNq), '-55.00');
     assert.equal(t.stopTargetAlso, false);
   });
@@ -685,7 +685,7 @@ describe('exits', () => {
     assert.equal(t.exitCase, 2);
     assert.equal(t.reason, 'target');
     assert.equal(t.exitQ, Q(5012));
-    assert.equal(fmtDollarsNq(t.nq), '50.75');
+    assert.equal(fmtDollarsNq(t.nq), '52.75');
   });
 
   it('an open equal to the target is not case 2; the low then stops it', () => {
@@ -703,7 +703,7 @@ describe('exits', () => {
     const t = run(m).r.trades[0];
     assert.equal(t.exitCase, 4);
     assert.equal(t.exitQ, Q(5010));
-    assert.equal(fmtDollarsNq(t.nq), '40.75');
+    assert.equal(fmtDollarsNq(t.nq), '42.75');
   });
 
   it('an entry gap past the target exits on the entry bar by case 2', () => {
@@ -713,7 +713,7 @@ describe('exits', () => {
     assert.equal(t.exitRow, k + 1);
     assert.equal(t.exitCase, 2);
     assert.equal(t.exitQ, Q(5011));
-    assert.equal(fmtDollarsNq(t.nq), '-4.25');
+    assert.equal(fmtDollarsNq(t.nq), '-2.25');
     assert.equal(t.cap, true);
     assert.equal(t.under1R, true);
     assert.equal(t.behind, true);
@@ -740,14 +740,14 @@ describe('exits', () => {
     const ta = run(a.m).r.trades[0];
     assert.equal(ta.reason, 'target');
     assert.equal(ta.exitQ, Q(4990));
-    assert.equal(fmtDollarsNq(ta.nq), '45.75');
+    assert.equal(fmtDollarsNq(ta.nq), '47.75');
 
     const b = canonicalShort();
     setBar(b.m, b.k + 3, 5006, 5006, 5006, 5006);
     const tb = run(b.m).r.trades[0];
     assert.equal(tb.exitCase, 1);
     assert.equal(tb.exitQ, Q(5006.25));
-    assert.equal(fmtDollarsNq(tb.nq), '-35.50');
+    assert.equal(fmtDollarsNq(tb.nq), '-33.50');
 
     const c = canonicalShort();
     setBar(c.m, c.k + 3, 5000, 5004.25, 4989.75, 5000);
@@ -762,7 +762,7 @@ describe('exits', () => {
     const t = r.trades[0];
     assert.equal(t.open, true);
     assert.equal(res.lastCloseQ, Q(5000));
-    assert.equal(fmtDollarsNq(t.markNq), '-9.25');
+    assert.equal(fmtDollarsNq(t.markNq), '-7.25');
     assert.equal(r.whole.closed.n, 0);
     assert.equal(r.whole.open.n, 1);
     assert.equal(r.whole.winRate, null);
@@ -779,23 +779,23 @@ describe('exits', () => {
 describe('worked examples (design lines 80 and 91)', () => {
   const setup = () => longWith({ setupLow: 4993, target: 5004 });
 
-  it('target fill 5004.00 with E 5000.25 and D 7.5: Net 15.75, R 0.42', () => {
+  it('target fill 5004.00 with E 5000.25 and D 7.5: Net 17.75, R 0.47', () => {
     const { m, k } = setup();
     setBar(m, k + 3, 5000, 5004.25, 5000, 5004);
     const t = run(m).r.trades[0];
     assert.equal(t.dQ, Q(7.5));
     assert.equal(t.sQ, Q(4992.75));
-    assert.equal(fmtDollarsNq(t.nq), '15.75');
-    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '0.42');
+    assert.equal(fmtDollarsNq(t.nq), '17.75');
+    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '0.47');
   });
 
-  it('stop fill 4992.50: Net -41.75, R -1.11', () => {
+  it('stop fill 4992.50: Net -39.75, R -1.06', () => {
     const { m, k } = setup();
     setBar(m, k + 3, 5000, 5000, 4992.75, 4995);
     const t = run(m).r.trades[0];
     assert.equal(t.exitQ, Q(4992.5));
-    assert.equal(fmtDollarsNq(t.nq), '-41.75');
-    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '-1.11');
+    assert.equal(fmtDollarsNq(t.nq), '-39.75');
+    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '-1.06');
   });
 
   it('a bar opening 5004.25 and trading down to 4992.00 exits at the target, 5004.25', () => {
@@ -806,15 +806,15 @@ describe('worked examples (design lines 80 and 91)', () => {
     assert.equal(t.exitQ, Q(5004.25));
   });
 
-  it('a stop at the 2-point floor with no gap: Nq -57, Dq 8 → R -1.43', () => {
+  it('a stop at the 2-point floor with no gap: Nq -49, Dq 8 → R -1.23', () => {
     const { m, k } = longWith();
     setBar(m, k + 3, 5000, 5000, 4998.25, 4999);
     const t = run(m).r.trades[0];
-    assert.equal(t.nq, -57);
+    assert.equal(t.nq, -49);
     assert.equal(t.dQ, 8);
-    assert.equal(fmtDollarsNq(t.nq), '-14.25');
+    assert.equal(fmtDollarsNq(t.nq), '-12.25');
     assert.equal(rHundredths(-57, 8), -143);
-    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '-1.43');
+    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '-1.23');
   });
 });
 
@@ -879,7 +879,7 @@ describe('accounting', () => {
     const m = build({ gaps: { 341: 120 } });
     // Trade 1: trigger 320 (low 4996), entry open 5011 at 321: E 5011.25, raw stop 4995.75,
     // raw distance 15.5 → cap, D 8. T 5010 is behind E and the entry bar opens one tick
-    // through it, so it exits on the entry bar by case 2 at 5011: (5011 - 5011.25) * 20 - 12 = -17 nq.
+    // through it, so it exits on the entry bar by case 2 at 5011: (5011 - 5011.25) * 20 - 4 = -9 nq.
     longTrigger(m, 320);
     resCandidate(m, F0 + 10, 5010);
     setBar(m, 320, 5000, 5000, 4996, 5000);
@@ -912,11 +912,11 @@ describe('accounting', () => {
     assert.equal(s.gapTrades, 1);
     assert.equal(s.closed.n, 1);
     assert.equal(s.open.n, 1);
-    assert.equal(fmtDollarsNq(s.netNq), '-4.25');
+    assert.equal(fmtDollarsNq(s.netNq), '-2.25');
     assert.equal(s.targetHitRate, 1);
     assert.equal(s.targetExitsNonPositive, 1);
     assert.equal(s.touchedNotFilled, 0);
-    assert.equal(fmtDollarsNq(b.markNq), '-4.25');
+    assert.equal(fmtDollarsNq(b.markNq), '-2.25');
   });
 
   it('70/30 segments by trigger time use integer arithmetic', () => {
@@ -929,7 +929,7 @@ describe('accounting', () => {
   it('each segment has its own funnel and stats', () => {
     const m = build({ n: 400 });
     // F at row 300 (10:00), last row 399: boundary 10 * (d - 300) < 7 * 99 → d <= 369 in segment 1.
-    // Trigger 320: E 5000.25, target exit at 5010 on row 325 → (5010 - 5000.25) * 20 - 12 = 183 nq, a win.
+    // Trigger 320: E 5000.25, target exit at 5010 on row 325 → (5010 - 5000.25) * 20 - 4 = 191 nq, a win.
     // Trigger 370 (segment 2): flat bars, T 5010, enters at 371 and is still open at row 399.
     longTrigger(m, 320);
     resCandidate(m, F0 + 10, 5010);
@@ -939,7 +939,7 @@ describe('accounting', () => {
     assert.deepEqual(r.triggers.map((x) => x.segment), [1, 2]);
     assert.equal(r.first.funnel.triggers, 1);
     assert.equal(r.first.funnel.closed, 1);
-    assert.equal(r.first.netNq, 183);
+    assert.equal(r.first.netNq, 191);
     assert.equal(r.second.funnel.triggers, 1);
     assert.equal(r.second.funnel.open, 1);
     assert.equal(r.second.closed.n, 0);
@@ -1177,7 +1177,7 @@ describe('store and report', () => {
       assert.ok(text.includes(`snapshot ${s.sha256.slice(0, 8)}`));
       for (const id of RUN_IDS) assert.ok(text.includes(`== ${id}:`));
       assert.ok(text.includes('F = 1m row 300'));
-      assert.ok(text.includes('Net $ 40.75'));
+      assert.ok(text.includes('Net $ 42.75'));
       assert.ok(!text.includes('ERROR'));
 
       const bad = join(dir, 'bad.json');
@@ -1234,8 +1234,8 @@ describe('1R target mode (target E plus or minus D)', () => {
     const t = run1R(m).r.trades[0];
     assert.equal(t.reason, 'target');
     assert.equal(t.exitQ, Q(5006.75));
-    assert.equal(fmtDollarsNq(t.nq), '24.50');
-    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '0.89');
+    assert.equal(fmtDollarsNq(t.nq), '26.50');
+    assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '0.96');
   });
 
   it('the default stays the SR target, and an unknown mode throws', () => {
@@ -1346,7 +1346,7 @@ describe('srsl mode (Cipher target, stop beyond the opposite Cipher level)', () 
     const t = runS(m).r.trades[0];
     assert.equal(t.reason, 'stop');
     assert.equal(t.exitQ, Q(4996.5));
-    assert.equal(fmtDollarsNq(t.nq), '-26.75'); // 4.75 points x $5 = $23.75, plus $3 fees
+    assert.equal(fmtDollarsNq(t.nq), '-24.75'); // 4.75 points x $5 = $23.75, plus $1 fees
   });
 
   it('sr and 1R never use no_stop', () => {
@@ -1443,7 +1443,7 @@ describe('band mode (Cipher Resistance and Support on the trigger row)', () => {
     const t = runB(m).r.trades[0];
     assert.equal(t.reason, 'stop');
     assert.equal(t.exitQ, Q(4996.5));
-    assert.equal(fmtDollarsNq(t.nq), '-26.75');
+    assert.equal(fmtDollarsNq(t.nq), '-24.75');
   });
 
   it('a target fill exits at Resistance', () => {

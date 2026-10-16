@@ -53,7 +53,7 @@ const WARMUP_1M_ROWS = 300;   // F index >= 300 (coordinator change to design li
 const WARMUP_15M_ROWS = 100;  // F's last closed 15m row index >= 100
 const STOP_MIN_Q = 8;         // 2 points
 const STOP_MAX_Q = 32;        // 8 points
-const FEES_NQ = 12;           // $3 round trip in quarter dollars
+const FEES_NQ = 4;            // $0.50 per side, $1 round trip, in quarter dollars (user rule, 2026-10-16)
 const MF_AVG_BARS = 4;        // Avg4: 4-bar simple average of closed 15m Mny Flow values
 const MIN_RR_NUM = 3;         // next and next15 modes: reward / risk >= 3/2
 const MIN_RR_DEN = 2;
