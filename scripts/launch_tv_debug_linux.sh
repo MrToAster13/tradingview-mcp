@@ -49,6 +49,9 @@ sleep 1
 
 echo "Found TradingView at: $APP"
 echo "Launching with --remote-debugging-port=$PORT ..."
+# Claude Code / T3 Code set ELECTRON_RUN_AS_NODE=1; inherited, it makes Electron
+# run as plain Node and reject --remote-debugging-port ("bad option").
+unset ELECTRON_RUN_AS_NODE
 "$APP" --remote-debugging-port=$PORT &
 TV_PID=$!
 echo "PID: $TV_PID"

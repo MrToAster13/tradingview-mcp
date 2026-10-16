@@ -72,6 +72,25 @@ describe('CLI — help and routing', () => {
     assert.ok(stdout.includes('check'));
   });
 
+  it('trades --help lists import', () => {
+    const { stdout, exitCode } = run(['trades', '--help']);
+    assert.equal(exitCode, 0);
+    assert.ok(stdout.includes('import'));
+  });
+
+  it('trades import --help shows --export and --dry-run', () => {
+    const { stdout, exitCode } = run(['trades', 'import', '--help']);
+    assert.equal(exitCode, 0);
+    assert.ok(stdout.includes('--export'));
+    assert.ok(stdout.includes('--dry-run'));
+  });
+
+  it('trades import rejects a malformed export id with exit 1', () => {
+    const { stderr, exitCode } = run(['trades', 'import', '--export', '../x', '--dry-run']);
+    assert.equal(exitCode, 1);
+    assert.ok(stderr.includes('Invalid export timestamp'));
+  });
+
   it('ohlcv --help shows options', () => {
     const { stdout, exitCode } = run(['ohlcv', '--help']);
     assert.equal(exitCode, 0);

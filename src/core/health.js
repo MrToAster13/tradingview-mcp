@@ -227,8 +227,22 @@ async function _probeCdp(cdpPort) {
   });
 }
 
+/**
+ * Copy of an env with ELECTRON_RUN_AS_NODE removed (any case; Windows env
+ * names are case-insensitive). Claude Code and T3 Code set it, and when it
+ * leaks into TradingView.exe, Electron runs as plain Node and exits with
+ * "bad option: --remote-debugging-port=9222".
+ */
+export function envWithoutElectronRunAsNode(env = process.env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (k.toUpperCase() !== 'ELECTRON_RUN_AS_NODE') out[k] = v;
+  }
+  return out;
+}
+
 function _spawnDetached(spawnFn, exe, args) {
-  const child = spawnFn(exe, args, { detached: true, stdio: 'ignore' });
+  const child = spawnFn(exe, args, { detached: true, stdio: 'ignore', env: envWithoutElectronRunAsNode() });
   child.unref();
   return child;
 }
@@ -264,6 +278,35 @@ async function _waitForCdp({ cdpPort, attempts, delay, probeCdp }) {
  * a plain directory outside WindowsApps works and keeps the user's session,
  * so copy the package into LOCALAPPDATA once per version and launch that.
  */
+/**
+ * Package family name from an MSIX install folder name
+ * (Name_Version_Arch_ResourceId_PublisherId, ResourceId usually empty):
+ *   TradingView.Desktop_3.4.1.8194_x64__n534cwy3pjxzj → TradingView.Desktop_n534cwy3pjxzj
+ * Returns null when the name does not have that shape.
+ */
+export function msixPackageFamilyName(installDirName) {
+  if (typeof installDirName !== 'string') return null;
+  const parts = installDirName.split('_');
+  if (parts.length !== 5) return null;
+  const name = parts[0];
+  const publisherId = parts[4];
+  if (!name || !parts[1] || !parts[2] || !publisherId) return null;
+  return `${name}_${publisherId}`;
+}
+
+/**
+ * MSIX apps keep their real profile (login, layouts, drawings) under
+ * %LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming\TradingView, not
+ * %APPDATA%\TradingView. The local copy runs outside the package container,
+ * so it must be pointed at that profile explicitly. Returns null if absent.
+ */
+function _msixProfileDir(msixExePath, existsSyncFn) {
+  const family = msixPackageFamilyName(basename(dirname(msixExePath)));
+  if (!family || !process.env.LOCALAPPDATA) return null;
+  const dir = join(process.env.LOCALAPPDATA, 'Packages', family, 'LocalCache', 'Roaming', 'TradingView');
+  return existsSyncFn(dir) ? dir : null;
+}
+
 function _copyMsixPackageLocal(tvPath, { cpSync, rmSync, readdirSync, existsSync }) {
   const srcDir = dirname(tvPath);
   const pkgName = basename(srcDir);
@@ -363,6 +406,7 @@ export async function launch({ port, kill_existing, _deps } = {}) {
   let child = _spawnDetached(deps.spawn, tvPath, cdpArgs);
   let info = null;
   let usedLocalCopy = false;
+  let userDataDir = null;
 
   if (platform === 'win32' && WINDOWS_APPS_RE.test(tvPath)) {
     const earlyFailure = await _spawnFailedEarly(child);
@@ -373,8 +417,10 @@ export async function launch({ port, kill_existing, _deps } = {}) {
       // Direct WindowsApps launch was blocked or CDP never bound — fall back to
       // a local copy of the package (see _copyMsixPackageLocal).
       const localExe = _copyMsixPackageLocal(tvPath, deps);
+      userDataDir = _msixProfileDir(tvPath, deps.existsSync);
+      const localArgs = userDataDir ? [...cdpArgs, `--user-data-dir=${userDataDir}`] : cdpArgs;
       await killExisting();
-      child = _spawnDetached(deps.spawn, localExe, cdpArgs);
+      child = _spawnDetached(deps.spawn, localExe, localArgs);
       tvPath = localExe;
       usedLocalCopy = true;
     }
@@ -390,12 +436,14 @@ export async function launch({ port, kill_existing, _deps } = {}) {
       cdp_port: cdpPort, cdp_url: `http://${CDP_HOST}:${cdpPort}`,
       browser: info.Browser, user_agent: info['User-Agent'],
       ...(usedLocalCopy && { msix_local_copy: true }),
+      ...(userDataDir && { user_data_dir: userDataDir }),
     };
   }
 
   return {
     success: true, platform, binary: tvPath, pid: child.pid, cdp_port: cdpPort, cdp_ready: false,
     ...(usedLocalCopy && { msix_local_copy: true }),
+    ...(userDataDir && { user_data_dir: userDataDir }),
     warning: 'TradingView launched but CDP not responding yet. It may still be loading. Try tv_health_check in a few seconds.',
   };
 }
