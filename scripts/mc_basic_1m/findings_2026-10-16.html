@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mc_basic_1m backtest findings</title>
+<style>
+.viz-root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface-1: #fcfcfb; --text-primary: #0b0b0b; --text-secondary: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10); --neg: #b42323; --pos: #006300;
+  --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) .viz-root {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface-1: #1a1a19; --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --neg: #e66767; --pos: #0ca30c;
+    --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+  }
+}
+:root[data-theme="dark"] .viz-root {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface-1: #1a1a19; --text-primary: #f0efec; --text-secondary: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10); --neg: #e66767; --pos: #0ca30c;
+  --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+.viz-root { background: var(--page); color: var(--text-primary); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; min-height: 100vh; }
+main { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; }
+h1 { font-size: 26px; margin: 0 0 4px; }
+h2 { font-size: 19px; margin: 40px 0 10px; }
+p, li { color: var(--text-secondary); max-width: 78ch; }
+.meta { color: var(--muted); font-size: 13px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+.verdict { border-left: 4px solid var(--neg); }
+.verdict p { color: var(--text-primary); margin: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+.tile .label { color: var(--text-secondary); font-size: 13px; }
+.tile .value { font-size: 28px; font-weight: 600; }
+.tile .sub { display: block; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+thead th { color: var(--text-secondary); font-weight: 600; border-bottom: 1px solid var(--axis); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sub { color: var(--muted); font-size: 12px; }
+.neg { color: var(--neg); }
+.pos { color: var(--pos); }
+.key { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
+.k-HTF-a { background: var(--series-1); } .k-HTF-b { background: var(--series-2); } .k-HTF-c { background: var(--series-3); }
+.legend { display: flex; gap: 18px; font-size: 13px; color: var(--text-secondary); margin: 0 0 8px; flex-wrap: wrap; }
+.chart-wrap { position: relative; }
+svg { display: block; width: 100%; height: auto; }
+.tick { fill: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.end-label { font-size: 12px; font-weight: 600; fill: var(--text-primary); }
+.tooltip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,0.12); display: none; min-width: 190px; }
+.tooltip .t { color: var(--text-secondary); margin-bottom: 4px; }
+.tooltip .row { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+details { margin: 8px 0; }
+summary { cursor: pointer; color: var(--text-primary); font-weight: 600; }
+.scroll { overflow-x: auto; max-height: 460px; overflow-y: auto; }
+table.trades { font-size: 13px; }
+code { font-size: 13px; }
+ol li, ul li { margin: 4px 0; }
+</style>
+</head>
+<body class="viz-root">
+<main>
+<h1>mc_basic_1m backtest: findings</h1>
+<div class="meta">Generated 2026-10-16 from snapshot 08df82fa (sha256 08df82fac21bc7e1…). CME_MINI:MES1!, 1m bars 2026-10-04 18:00 to 2026-10-16 06:17 ET.</div>
+
+<h2>Verdict</h2>
+<div class="card verdict"><p>All three runs lose money, in both halves of the data and on both longs and shorts. Stops are tight and targets often sit closer than the stop, so the strategy needs about a 42% win rate to break even (HTF-a). It wins 20.6%.</p></div>
+<div class="tiles">
+<div class="card tile"><div class="label"><span class="key k-HTF-a"></span>HTF-a net</div><div class="value neg">−$866.75</div><span class="sub">136 trades, 20.6% won</span></div>
+<div class="card tile"><div class="label"><span class="key k-HTF-b"></span>HTF-b net</div><div class="value neg">−$904.25</div><span class="sub">116 trades, 19.8% won</span></div>
+<div class="card tile"><div class="label"><span class="key k-HTF-c"></span>HTF-c net</div><div class="value neg">−$278.25</div><span class="sub">39 trades, 25.6% won</span></div>
+</div>
+
+<h2>Results per run</h2>
+<div class="card"><table>
+<thead><tr><th>Run</th><th>15m filter (shorts use Falling)</th><th class="num">Closed trades <span class="sub">(long / short)</span></th><th class="num">Win rate</th><th class="num">Wilson 95%</th><th class="num">Net $</th><th class="num">Max drawdown</th><th class="num">Avg R</th></tr></thead>
+<tbody>
+<tr><th scope="row"><span class="key k-HTF-a"></span>HTF-a</th><td>Mny Flow</td><td class="num">136 <span class="sub">(60 / 76)</span></td><td class="num">20.6%</td><td class="num">14.6% to 28.1%</td><td class="num neg">−$866.75</td><td class="num">$866.75</td><td class="num">-0.57</td></tr>
+<tr><th scope="row"><span class="key k-HTF-b"></span>HTF-b</th><td>at least 2 of Mny Flow, Blue Wave, RSI</td><td class="num">116 <span class="sub">(49 / 67)</span></td><td class="num">19.8%</td><td class="num">13.6% to 28.0%</td><td class="num neg">−$904.25</td><td class="num">$904.25</td><td class="num">-0.74</td></tr>
+<tr><th scope="row"><span class="key k-HTF-c"></span>HTF-c</th><td>all 3 of Mny Flow, Blue Wave, RSI</td><td class="num">39 <span class="sub">(14 / 25)</span></td><td class="num">25.6%</td><td class="num">14.6% to 41.1%</td><td class="num neg">−$278.25</td><td class="num">$278.25</td><td class="num">-0.66</td></tr>
+</tbody></table></div>
+
+<h2>Equity curves</h2>
+<div class="card">
+<div class="legend"><span><span class="key k-HTF-a"></span>HTF-a</span><span><span class="key k-HTF-b"></span>HTF-b</span><span><span class="key k-HTF-c"></span>HTF-c</span></div>
+<div class="chart-wrap" id="chart"><div class="tooltip" id="tip"></div></div>
+<p class="sub">Cumulative net P&amp;L after costs, at each trade's exit. Flat stretches are times with no closed trade, including the weekend. Each run's max drawdown equals its total loss because no run ever closed above its start.</p>
+</div>
+
+<h2>Every split loses</h2>
+<div class="card"><table>
+<thead><tr><th>Run</th><th class="num">First 70% (by trigger time)</th><th class="num">Last 30%</th><th class="num">Longs</th><th class="num">Shorts</th></tr></thead>
+<tbody>
+<tr><th scope="row">HTF-a</th><td class="num neg">−$445.25 <span class="sub">(73 trades, 20.5% won)</span></td><td class="num neg">−$421.50 <span class="sub">(63 trades, 20.6% won)</span></td><td class="num neg">−$433.75 <span class="sub">(60 trades, 12 won)</span></td><td class="num neg">−$433.00 <span class="sub">(76 trades, 16 won)</span></td></tr>
+<tr><th scope="row">HTF-b</th><td class="num neg">−$546.00 <span class="sub">(62 trades, 16.1% won)</span></td><td class="num neg">−$358.25 <span class="sub">(54 trades, 24.1% won)</span></td><td class="num neg">−$329.50 <span class="sub">(49 trades, 12 won)</span></td><td class="num neg">−$574.75 <span class="sub">(67 trades, 11 won)</span></td></tr>
+<tr><th scope="row">HTF-c</th><td class="num neg">−$186.75 <span class="sub">(21 trades, 19.0% won)</span></td><td class="num neg">−$91.50 <span class="sub">(18 trades, 33.3% won)</span></td><td class="num neg">−$114.50 <span class="sub">(14 trades, 4 won)</span></td><td class="num neg">−$163.75 <span class="sub">(25 trades, 6 won)</span></td></tr>
+</tbody></table></div>
+
+<h2>Why it loses (HTF-a)</h2>
+<div class="card"><ul>
+<li>91 of 136 stops sat on the 2-point floor, so a 2-point move against the entry ends the trade.</li>
+<li>62 targets were less than 1R away, and 14 targets were at or behind the entry price. The nearest Cipher level is often too close to pay for the risk.</li>
+<li>Average win +$17.76, average loss −$12.63. Break-even needs a 41.6% win rate. Actual: 20.6% (Wilson 95% upper bound 28.1%).</li>
+<li>Gross P&amp;L before fees and slippage is −$185.00, so the strategy loses even before costs. Costs add −$681.75.</li>
+<li>Largest win +$84.50, largest loss −$44.25.</li>
+<li>Funnel: 446 triggers = 27 ignored while in a position + 281 failed the 15m filter + 2 had no target + 136 closed.</li>
+</ul></div>
+
+<h2>Rules tested</h2>
+<div class="card"><ul>
+<li>Long trigger: MarketCipher_B Buy dot. Short trigger: Blue Wave Crossing Down with Blue Wave at or above 60.</li>
+<li>Entry at the next bar's open plus or minus 1 tick.</li>
+<li>15m filter: HTF-a needs Money Flow rising, HTF-b needs 2 of 3 rising (Money Flow, Blue Wave, RSI), HTF-c needs all 3. Shorts use falling.</li>
+<li>Stop 1 tick below the setup bar's low for longs, 1 tick above its high for shorts, clamped to 2 to 8 points.</li>
+<li>Target at the nearest confirmed Cipher Resistance (longs) or Support (shorts). The SR indicator runs on a 5m setting, so levels come from the 5m bar 3 bars back. This rule matches 80 of 80 Resistance and 87 of 87 Support changes in the data.</li>
+<li>Costs: $5 per point, $3 fees per trade, 1 tick slippage.</li>
+</ul></div>
+
+<h2>Data</h2>
+<div class="card"><ul>
+<li>1m: 13,158 closed bars, 2026-10-04 18:00 to 2026-10-16 06:17 ET. Trading starts 2026-10-04 23:00 ET after 300 warm-up bars. No unexpected gaps.</li>
+<li>15m: 1,773 closed bars, 2026-09-21 00:00 to 2026-10-16 06:00 ET, trimmed to start after the September contract roll.</li>
+<li>About 12 days of data. The confidence intervals are wide, but even their upper bounds sit below break-even.</li>
+<li>In-sample only. The parameters were fixed before any result was seen, and all three runs are reported.</li>
+</ul></div>
+
+<h2>Fixes made during the audits</h2>
+<div class="card"><ol>
+<li><b>Target levels.</b> The SR levels follow the indicator's 5m setting and count only 5m bars that exist, so the daily halt and the weekend do not shift them. Counting 15 clock minutes back instead matched only 85 of 87 Support changes.</li>
+<li><b>Setting check.</b> The simulator only accepts an SR setting that is a whole number of minutes and divides an hour.</li>
+<li><b>Snapshot.</b> The snapshot now records the SR setting, and the forward test refuses two snapshots taken with different settings.</li>
+<li><b>Chart-reading crash.</b> The read script crashed on drawings ("s.metaInfo is not a function"). This bug predates the work.</li>
+<li><b>Typo in the setting check.</b> A literal <code>d</code> where <code>\d</code> was meant rejected every setting of 10 minutes or more. Fixed, with a test that fails on the old code.</li>
+<li><b>Design note.</b> The level counts in the design note were stale. Corrected to the measured values.</li>
+</ol>
+<p>A later audit found that the stop rule above described shorts wrongly; it now says 1 tick above the high. Tests after the 1:1 work: 377 run, 369 pass, 7 fail, 1 skipped. All 7 failures are in <code>lint.test.mjs</code> and predate this work.</p></div>
+
+<h2>Where the plan changed</h2>
+<div class="card"><ul>
+<li>TradingView was relaunched after the power loss.</li>
+<li>Data came from hidden chart sessions instead of a second tab. The visible chart was only read, never changed.</li>
+<li>1m history starts Oct 4, the furthest back the chart loaded.</li>
+<li>The official TradingView MCP was added as mcp-tradingview. There was no old one to remove.</li>
+<li>The target rule was changed to the 5m setting because the original rule matched only 1 of 80 levels.</li>
+<li>The SR setting was added to the existing snapshot by hand, from a live read of the indicator.</li>
+</ul></div>
+
+<h2>Open follow-ups</h2>
+<div class="card"><ul>
+<li>The 7 lint failures. One lint test passes without checking anything, so those parts were checked by hand.</li>
+<li>Tests for <code>broker.mjs</code> and <code>draw.mjs</code>.</li>
+<li><code>inputs_b</code> handling in <code>snapshot.mjs</code>.</li>
+<li><code>TEMPLATE_SHA256</code> is still a placeholder.</li>
+<li><code>cli.mjs</code>.</li>
+<li>The CDP host is hard-coded to 127.0.0.1.</li>
+</ul></div>
+
+<h2>Trade lists</h2>
+<details><summary>HTF-a: 136 trades</summary>
+<div class="scroll"><table class="trades"><thead><tr><th>#</th><th>Side</th><th>Entry (ET)</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Target</th><th>Exit (ET)</th><th>Exit by</th><th class="num">Net $</th><th class="num">R</th><th>Flags</th></tr></thead><tbody>
+<tr><td>0</td><td>long</td><td>10-05 03:26</td><td class="num">7765.25</td><td class="num">7762.75</td><td class="num">7771.75</td><td>10-05 03:27</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>1</td><td>long</td><td>10-05 04:39</td><td class="num">7770.75</td><td class="num">7767.25</td><td class="num">7771.75</td><td>10-05 04:42</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R</td></tr>
+<tr><td>2</td><td>long</td><td>10-05 05:32</td><td class="num">7768.00</td><td class="num">7766.00</td><td class="num">7771.75</td><td>10-05 05:35</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>3</td><td>long</td><td>10-05 05:42</td><td class="num">7763.75</td><td class="num">7761.75</td><td class="num">7771.75</td><td>10-05 05:42</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>4</td><td>short</td><td>10-05 06:58</td><td class="num">7769.75</td><td class="num">7772.00</td><td class="num">7765.50</td><td>10-05 07:00</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>5</td><td>short</td><td>10-05 08:08</td><td class="num">7776.25</td><td class="num">7778.25</td><td class="num">7765.50</td><td>10-05 08:11</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>6</td><td>short</td><td>10-05 08:16</td><td class="num">7777.25</td><td class="num">7779.25</td><td class="num">7765.50</td><td>10-05 08:16</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>7</td><td>short</td><td>10-05 08:19</td><td class="num">7777.75</td><td class="num">7779.75</td><td class="num">7765.50</td><td>10-05 08:52</td><td>target</td><td class="num pos">+$58.25</td><td class="num">5.83</td><td>floor</td></tr>
+<tr><td>8</td><td>short</td><td>10-05 09:15</td><td class="num">7772.25</td><td class="num">7774.25</td><td class="num">7765.50</td><td>10-05 09:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>9</td><td>short</td><td>10-05 09:23</td><td class="num">7775.50</td><td class="num">7777.50</td><td class="num">7765.50</td><td>10-05 09:27</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>10</td><td>short</td><td>10-05 09:35</td><td class="num">7789.25</td><td class="num">7791.25</td><td class="num">7765.50</td><td>10-05 09:35</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>11</td><td>long</td><td>10-05 15:49</td><td class="num">7831.75</td><td class="num">7829.75</td><td class="num">7847.75</td><td>10-05 15:50</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>12</td><td>long</td><td>10-05 15:53</td><td class="num">7825.25</td><td class="num">7823.25</td><td class="num">7847.75</td><td>10-05 15:53</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>13</td><td>short</td><td>10-05 19:15</td><td class="num">7832.75</td><td class="num">7834.75</td><td class="num">7821.00</td><td>10-05 19:20</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>14</td><td>long</td><td>10-05 19:53</td><td class="num">7831.50</td><td class="num">7829.50</td><td class="num">7836.25</td><td>10-05 20:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>15</td><td>long</td><td>10-05 22:08</td><td class="num">7831.75</td><td class="num">7829.75</td><td class="num">7836.25</td><td>10-05 22:35</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>16</td><td>short</td><td>10-05 23:07</td><td class="num">7833.75</td><td class="num">7835.75</td><td class="num">7821.00</td><td>10-05 23:23</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>17</td><td>short</td><td>10-06 00:11</td><td class="num">7835.25</td><td class="num">7837.25</td><td class="num">7821.00</td><td>10-06 02:15</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>18</td><td>long</td><td>10-06 03:06</td><td class="num">7838.00</td><td class="num">7836.00</td><td class="num">7847.75</td><td>10-06 03:07</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>19</td><td>long</td><td>10-06 03:09</td><td class="num">7837.25</td><td class="num">7835.25</td><td class="num">7847.75</td><td>10-06 05:11</td><td>target</td><td class="num pos">+$49.50</td><td class="num">4.95</td><td></td></tr>
+<tr><td>20</td><td>short</td><td>10-06 06:27</td><td class="num">7844.75</td><td class="num">7846.75</td><td class="num">7839.50</td><td>10-06 06:40</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>21</td><td>short</td><td>10-06 09:09</td><td class="num">7862.00</td><td class="num">7864.00</td><td class="num">7839.50</td><td>10-06 09:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>22</td><td>short</td><td>10-06 09:14</td><td class="num">7862.00</td><td class="num">7864.25</td><td class="num">7839.50</td><td>10-06 09:25</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>23</td><td>short</td><td>10-06 14:54</td><td class="num">7881.00</td><td class="num">7883.00</td><td class="num">7876.75</td><td>10-06 15:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>24</td><td>short</td><td>10-06 16:23</td><td class="num">7877.50</td><td class="num">7879.50</td><td class="num">7876.75</td><td>10-06 16:27</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>25</td><td>short</td><td>10-06 16:54</td><td class="num">7879.00</td><td class="num">7881.00</td><td class="num">7876.75</td><td>10-06 16:59</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>26</td><td>short</td><td>10-06 18:03</td><td class="num">7881.00</td><td class="num">7883.00</td><td class="num">7876.75</td><td>10-06 18:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>27</td><td>short</td><td>10-06 19:28</td><td class="num">7881.50</td><td class="num">7883.50</td><td class="num">7878.75</td><td>10-06 20:15</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>28</td><td>short</td><td>10-06 20:18</td><td class="num">7883.00</td><td class="num">7885.00</td><td class="num">7878.75</td><td>10-06 22:00</td><td>target</td><td class="num pos">+$18.25</td><td class="num">1.83</td><td>floor</td></tr>
+<tr><td>29</td><td>long</td><td>10-07 05:10</td><td class="num">7870.75</td><td class="num">7868.75</td><td class="num">7879.25</td><td>10-07 05:16</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>30</td><td>long</td><td>10-07 07:30</td><td class="num">7843.50</td><td class="num">7841.50</td><td class="num">7847.75</td><td>10-07 07:30</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>31</td><td>long</td><td>10-07 07:34</td><td class="num">7841.50</td><td class="num">7838.75</td><td class="num">7847.75</td><td>10-07 07:39</td><td>stop</td><td class="num neg">−$18.00</td><td class="num">-1.31</td><td></td></tr>
+<tr><td>32</td><td>long</td><td>10-07 07:43</td><td class="num">7838.75</td><td class="num">7836.75</td><td class="num">7847.75</td><td>10-07 07:46</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>33</td><td>short</td><td>10-07 11:18</td><td class="num">7829.75</td><td class="num">7832.25</td><td class="num">7821.00</td><td>10-07 11:35</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>34</td><td>short</td><td>10-07 11:40</td><td class="num">7837.50</td><td class="num">7839.75</td><td class="num">7836.75</td><td>10-07 11:42</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>35</td><td>short</td><td>10-07 14:59</td><td class="num">7856.00</td><td class="num">7858.00</td><td class="num">7841.25</td><td>10-07 15:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>36</td><td>short</td><td>10-07 15:03</td><td class="num">7856.75</td><td class="num">7859.75</td><td class="num">7841.25</td><td>10-08 01:56</td><td>target</td><td class="num pos">+$74.50</td><td class="num">4.97</td><td></td></tr>
+<tr><td>37</td><td>long</td><td>10-08 04:57</td><td class="num">7823.75</td><td class="num">7821.75</td><td class="num">7830.00</td><td>10-08 05:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>38</td><td>short</td><td>10-08 09:25</td><td class="num">7828.75</td><td class="num">7830.75</td><td class="num">7825.00</td><td>10-08 09:30</td><td>target</td><td class="num pos">+$15.75</td><td class="num">1.58</td><td>floor</td></tr>
+<tr><td>39</td><td>long</td><td>10-08 11:18</td><td class="num">7825.25</td><td class="num">7823.25</td><td class="num">7830.00</td><td>10-08 11:18</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>40</td><td>long</td><td>10-08 16:47</td><td class="num">7819.25</td><td class="num">7817.25</td><td class="num">7824.50</td><td>10-08 18:03</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>41</td><td>short</td><td>10-08 20:38</td><td class="num">7830.25</td><td class="num">7832.25</td><td class="num">7825.00</td><td>10-08 20:45</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>42</td><td>long</td><td>10-08 23:14</td><td class="num">7832.50</td><td class="num">7830.50</td><td class="num">7833.25</td><td>10-08 23:15</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>43</td><td>long</td><td>10-09 00:54</td><td class="num">7837.25</td><td class="num">7835.25</td><td class="num">7837.75</td><td>10-09 00:54</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>44</td><td>short</td><td>10-09 01:33</td><td class="num">7840.75</td><td class="num">7842.75</td><td class="num">7839.50</td><td>10-09 01:37</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>45</td><td>short</td><td>10-09 01:41</td><td class="num">7841.75</td><td class="num">7843.75</td><td class="num">7841.25</td><td>10-09 01:47</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>46</td><td>short</td><td>10-09 02:42</td><td class="num">7841.50</td><td class="num">7843.50</td><td class="num">7841.25</td><td>10-09 02:43</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>47</td><td>long</td><td>10-09 05:49</td><td class="num">7847.00</td><td class="num">7845.00</td><td class="num">7847.75</td><td>10-09 05:49</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>48</td><td>short</td><td>10-09 08:00</td><td class="num">7851.00</td><td class="num">7853.00</td><td class="num">7848.25</td><td>10-09 08:01</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>49</td><td>short</td><td>10-09 08:04</td><td class="num">7849.75</td><td class="num">7851.75</td><td class="num">7848.25</td><td>10-09 08:05</td><td>target</td><td class="num pos">+$4.50</td><td class="num">0.45</td><td>under 1R</td></tr>
+<tr><td>50</td><td>short</td><td>10-09 10:28</td><td class="num">7841.00</td><td class="num">7843.25</td><td class="num">7841.25</td><td>10-09 10:28</td><td>target</td><td class="num neg">−$4.25</td><td class="num">-0.38</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>51</td><td>short</td><td>10-09 11:58</td><td class="num">7850.75</td><td class="num">7852.75</td><td class="num">7848.25</td><td>10-09 12:00</td><td>target</td><td class="num pos">+$9.50</td><td class="num">0.95</td><td>floor</td></tr>
+<tr><td>52</td><td>short</td><td>10-09 13:45</td><td class="num">7857.25</td><td class="num">7859.25</td><td class="num">7853.00</td><td>10-09 13:46</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>53</td><td>short</td><td>10-09 14:01</td><td class="num">7858.50</td><td class="num">7860.50</td><td class="num">7858.50</td><td>10-09 14:01</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>54</td><td>short</td><td>10-09 15:25</td><td class="num">7867.50</td><td class="num">7869.50</td><td class="num">7866.25</td><td>10-09 15:28</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.33</td><td>floor, under 1R</td></tr>
+<tr><td>55</td><td>short</td><td>10-09 16:53</td><td class="num">7866.00</td><td class="num">7868.00</td><td class="num">7858.50</td><td>10-11 18:00</td><td>stop</td><td class="num neg">−$36.75</td><td class="num">-3.68</td><td>floor</td></tr>
+<tr><td>56</td><td>long</td><td>10-11 18:57</td><td class="num">7867.75</td><td class="num">7865.75</td><td class="num">7869.25</td><td>10-11 19:08</td><td>target</td><td class="num pos">+$5.75</td><td class="num">0.58</td><td>floor, under 1R</td></tr>
+<tr><td>57</td><td>short</td><td>10-11 19:18</td><td class="num">7873.50</td><td class="num">7875.50</td><td class="num">7872.25</td><td>10-11 19:20</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>58</td><td>short</td><td>10-11 19:23</td><td class="num">7876.00</td><td class="num">7878.00</td><td class="num">7875.75</td><td>10-11 19:23</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>59</td><td>short</td><td>10-11 23:54</td><td class="num">7885.25</td><td class="num">7887.25</td><td class="num">7879.75</td><td>10-12 02:05</td><td>target</td><td class="num pos">+$24.50</td><td class="num">2.45</td><td>floor</td></tr>
+<tr><td>60</td><td>short</td><td>10-12 03:43</td><td class="num">7882.00</td><td class="num">7884.00</td><td class="num">7879.75</td><td>10-12 03:50</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>61</td><td>short</td><td>10-12 05:19</td><td class="num">7870.50</td><td class="num">7872.50</td><td class="num">7869.75</td><td>10-12 05:20</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>62</td><td>short</td><td>10-12 05:24</td><td class="num">7871.75</td><td class="num">7873.75</td><td class="num">7871.75</td><td>10-12 05:25</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>63</td><td>long</td><td>10-12 08:37</td><td class="num">7861.50</td><td class="num">7859.50</td><td class="num">7864.25</td><td>10-12 08:38</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>64</td><td>long</td><td>10-12 08:40</td><td class="num">7860.75</td><td class="num">7857.75</td><td class="num">7864.25</td><td>10-12 08:46</td><td>target</td><td class="num pos">+$14.50</td><td class="num">0.97</td><td></td></tr>
+<tr><td>65</td><td>short</td><td>10-12 09:08</td><td class="num">7865.25</td><td class="num">7867.25</td><td class="num">7865.25</td><td>10-12 09:08</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>66</td><td>long</td><td>10-12 09:52</td><td class="num">7861.75</td><td class="num">7859.75</td><td class="num">7864.25</td><td>10-12 09:56</td><td>target</td><td class="num pos">+$9.50</td><td class="num">0.95</td><td>floor</td></tr>
+<tr><td>67</td><td>short</td><td>10-12 11:01</td><td class="num">7857.50</td><td class="num">7859.50</td><td class="num">7853.00</td><td>10-12 11:08</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>68</td><td>long</td><td>10-12 12:28</td><td class="num">7858.00</td><td class="num">7856.00</td><td class="num">7858.25</td><td>10-12 12:30</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>under 1R</td></tr>
+<tr><td>69</td><td>short</td><td>10-12 14:47</td><td class="num">7850.50</td><td class="num">7852.50</td><td class="num">7850.25</td><td>10-12 14:49</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>70</td><td>long</td><td>10-12 18:58</td><td class="num">7858.75</td><td class="num">7856.75</td><td class="num">7859.50</td><td>10-12 19:04</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>71</td><td>long</td><td>10-12 19:10</td><td class="num">7855.00</td><td class="num">7853.00</td><td class="num">7856.25</td><td>10-12 19:13</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>72</td><td>long</td><td>10-12 20:47</td><td class="num">7841.50</td><td class="num">7839.50</td><td class="num">7841.75</td><td>10-12 20:48</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>73</td><td>long</td><td>10-12 21:36</td><td class="num">7844.25</td><td class="num">7842.25</td><td class="num">7846.75</td><td>10-12 21:37</td><td>target</td><td class="num pos">+$9.50</td><td class="num">0.95</td><td>floor</td></tr>
+<tr><td>74</td><td>long</td><td>10-13 00:52</td><td class="num">7841.00</td><td class="num">7839.00</td><td class="num">7841.75</td><td>10-13 00:56</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>75</td><td>short</td><td>10-13 01:13</td><td class="num">7847.25</td><td class="num">7849.25</td><td class="num">7846.00</td><td>10-13 01:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>76</td><td>long</td><td>10-13 06:35</td><td class="num">7852.50</td><td class="num">7850.50</td><td class="num">7852.75</td><td>10-13 06:35</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>77</td><td>short</td><td>10-13 08:28</td><td class="num">7852.75</td><td class="num">7854.75</td><td class="num">7850.25</td><td>10-13 08:28</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>78</td><td>short</td><td>10-13 09:42</td><td class="num">7861.25</td><td class="num">7863.50</td><td class="num">7860.00</td><td>10-13 09:42</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.29</td><td>under 1R</td></tr>
+<tr><td>79</td><td>long</td><td>10-13 10:09</td><td class="num">7849.50</td><td class="num">7847.25</td><td class="num">7850.00</td><td>10-13 10:10</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>80</td><td>long</td><td>10-13 10:58</td><td class="num">7845.50</td><td class="num">7843.50</td><td class="num">7846.75</td><td>10-13 10:59</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>81</td><td>short</td><td>10-13 12:20</td><td class="num">7845.75</td><td class="num">7847.75</td><td class="num">7845.00</td><td>10-13 12:25</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>82</td><td>short</td><td>10-13 12:28</td><td class="num">7846.00</td><td class="num">7848.00</td><td class="num">7846.00</td><td>10-13 12:29</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>83</td><td>long</td><td>10-13 13:04</td><td class="num">7846.50</td><td class="num">7844.50</td><td class="num">7846.75</td><td>10-13 13:04</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>84</td><td>long</td><td>10-13 13:21</td><td class="num">7846.75</td><td class="num">7844.75</td><td class="num">7846.75</td><td>10-13 13:21</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>85</td><td>short</td><td>10-13 14:12</td><td class="num">7855.00</td><td class="num">7857.00</td><td class="num">7854.75</td><td>10-13 14:12</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>86</td><td>short</td><td>10-13 15:11</td><td class="num">7857.00</td><td class="num">7859.00</td><td class="num">7854.75</td><td>10-13 15:14</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>87</td><td>long</td><td>10-13 15:59</td><td class="num">7855.00</td><td class="num">7852.50</td><td class="num">7856.25</td><td>10-13 15:59</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.26</td><td>under 1R</td></tr>
+<tr><td>88</td><td>short</td><td>10-13 20:16</td><td class="num">7856.25</td><td class="num">7858.25</td><td class="num">7854.75</td><td>10-13 20:23</td><td>target</td><td class="num pos">+$4.50</td><td class="num">0.45</td><td>floor, under 1R</td></tr>
+<tr><td>89</td><td>short</td><td>10-13 20:37</td><td class="num">7859.00</td><td class="num">7861.00</td><td class="num">7858.50</td><td>10-13 20:38</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>90</td><td>short</td><td>10-13 20:42</td><td class="num">7860.50</td><td class="num">7862.50</td><td class="num">7860.00</td><td>10-13 20:43</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>91</td><td>long</td><td>10-13 21:07</td><td class="num">7857.50</td><td class="num">7855.50</td><td class="num">7857.50</td><td>10-13 21:07</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>92</td><td>short</td><td>10-13 21:29</td><td class="num">7860.25</td><td class="num">7862.25</td><td class="num">7860.00</td><td>10-13 21:30</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>93</td><td>short</td><td>10-13 21:55</td><td class="num">7862.50</td><td class="num">7864.50</td><td class="num">7862.25</td><td>10-13 21:57</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>94</td><td>long</td><td>10-14 01:13</td><td class="num">7869.50</td><td class="num">7866.00</td><td class="num">7869.25</td><td>10-14 01:13</td><td>target</td><td class="num neg">−$4.25</td><td class="num">-0.24</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>95</td><td>long</td><td>10-14 03:27</td><td class="num">7866.25</td><td class="num">7863.75</td><td class="num">7866.25</td><td>10-14 03:34</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>96</td><td>short</td><td>10-14 05:13</td><td class="num">7871.00</td><td class="num">7873.00</td><td class="num">7869.75</td><td>10-14 05:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>97</td><td>long</td><td>10-14 06:08</td><td class="num">7869.25</td><td class="num">7867.25</td><td class="num">7870.00</td><td>10-14 06:09</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>98</td><td>short</td><td>10-14 07:21</td><td class="num">7869.50</td><td class="num">7871.50</td><td class="num">7867.50</td><td>10-14 07:27</td><td>target</td><td class="num pos">+$7.00</td><td class="num">0.70</td><td>floor</td></tr>
+<tr><td>99</td><td>short</td><td>10-14 12:43</td><td class="num">7773.75</td><td class="num">7776.75</td><td class="num">7765.50</td><td>10-14 12:43</td><td>stop</td><td class="num neg">−$19.25</td><td class="num">-1.28</td><td></td></tr>
+<tr><td>100</td><td>short</td><td>10-14 15:25</td><td class="num">7762.50</td><td class="num">7764.75</td><td class="num">7761.75</td><td>10-14 15:25</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.07</td><td>under 1R</td></tr>
+<tr><td>101</td><td>short</td><td>10-14 19:06</td><td class="num">7753.50</td><td class="num">7756.75</td><td class="num">7744.75</td><td>10-14 19:51</td><td>target</td><td class="num pos">+$40.75</td><td class="num">2.51</td><td></td></tr>
+<tr><td>102</td><td>long</td><td>10-14 19:57</td><td class="num">7743.75</td><td class="num">7741.75</td><td class="num">7757.00</td><td>10-14 20:13</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>103</td><td>short</td><td>10-14 20:37</td><td class="num">7753.25</td><td class="num">7755.25</td><td class="num">7748.25</td><td>10-14 20:42</td><td>target</td><td class="num pos">+$22.00</td><td class="num">2.20</td><td>floor</td></tr>
+<tr><td>104</td><td>short</td><td>10-15 00:26</td><td class="num">7740.50</td><td class="num">7742.50</td><td class="num">7729.50</td><td>10-15 00:27</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>105</td><td>short</td><td>10-15 00:32</td><td class="num">7743.00</td><td class="num">7746.00</td><td class="num">7741.75</td><td>10-15 00:51</td><td>stop</td><td class="num neg">−$19.25</td><td class="num">-1.28</td><td>under 1R</td></tr>
+<tr><td>106</td><td>long</td><td>10-15 01:29</td><td class="num">7742.75</td><td class="num">7740.75</td><td class="num">7757.00</td><td>10-15 01:30</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>107</td><td>long</td><td>10-15 01:35</td><td class="num">7738.75</td><td class="num">7736.75</td><td class="num">7757.00</td><td>10-15 01:42</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>108</td><td>short</td><td>10-15 02:10</td><td class="num">7744.75</td><td class="num">7746.75</td><td class="num">7744.75</td><td>10-15 02:10</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>109</td><td>long</td><td>10-15 02:51</td><td class="num">7734.00</td><td class="num">7731.75</td><td class="num">7736.50</td><td>10-15 02:52</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>110</td><td>short</td><td>10-15 03:12</td><td class="num">7738.25</td><td class="num">7740.25</td><td class="num">7729.50</td><td>10-15 03:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>111</td><td>long</td><td>10-15 05:33</td><td class="num">7747.50</td><td class="num">7743.75</td><td class="num">7757.00</td><td>10-15 06:04</td><td>stop</td><td class="num neg">−$23.00</td><td class="num">-1.23</td><td></td></tr>
+<tr><td>112</td><td>long</td><td>10-15 06:08</td><td class="num">7745.50</td><td class="num">7743.50</td><td class="num">7757.00</td><td>10-15 06:34</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>113</td><td>short</td><td>10-15 07:04</td><td class="num">7744.50</td><td class="num">7748.25</td><td class="num">7744.00</td><td>10-15 07:04</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.03</td><td>under 1R</td></tr>
+<tr><td>114</td><td>short</td><td>10-15 07:35</td><td class="num">7752.50</td><td class="num">7755.00</td><td class="num">7748.25</td><td>10-15 07:37</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>115</td><td>short</td><td>10-15 08:28</td><td class="num">7748.00</td><td class="num">7751.50</td><td class="num">7748.00</td><td>10-15 08:29</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>116</td><td>long</td><td>10-15 09:29</td><td class="num">7738.50</td><td class="num">7735.75</td><td class="num">7750.00</td><td>10-15 09:29</td><td>stop</td><td class="num neg">−$18.00</td><td class="num">-1.31</td><td></td></tr>
+<tr><td>117</td><td>long</td><td>10-15 09:34</td><td class="num">7735.75</td><td class="num">7731.75</td><td class="num">7736.50</td><td>10-15 09:34</td><td>stop</td><td class="num neg">−$24.25</td><td class="num">-1.21</td><td>under 1R</td></tr>
+<tr><td>118</td><td>long</td><td>10-15 09:37</td><td class="num">7737.50</td><td class="num">7729.50</td><td class="num">7750.00</td><td>10-15 09:46</td><td>stop</td><td class="num neg">−$44.25</td><td class="num">-1.11</td><td>cap</td></tr>
+<tr><td>119</td><td>long</td><td>10-15 09:58</td><td class="num">7719.00</td><td class="num">7717.00</td><td class="num">7736.50</td><td>10-15 10:01</td><td>target</td><td class="num pos">+$84.50</td><td class="num">8.45</td><td></td></tr>
+<tr><td>120</td><td>long</td><td>10-15 12:24</td><td class="num">7766.75</td><td class="num">7763.25</td><td class="num">7769.75</td><td>10-15 12:25</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R</td></tr>
+<tr><td>121</td><td>long</td><td>10-15 12:27</td><td class="num">7764.75</td><td class="num">7762.50</td><td class="num">7769.75</td><td>10-15 12:34</td><td>target</td><td class="num pos">+$22.00</td><td class="num">1.96</td><td></td></tr>
+<tr><td>122</td><td>long</td><td>10-15 14:07</td><td class="num">7778.25</td><td class="num">7776.00</td><td class="num">7779.50</td><td>10-15 14:08</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>123</td><td>long</td><td>10-15 14:15</td><td class="num">7769.50</td><td class="num">7767.50</td><td class="num">7769.75</td><td>10-15 14:15</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>124</td><td>short</td><td>10-15 14:57</td><td class="num">7777.75</td><td class="num">7779.75</td><td class="num">7777.75</td><td>10-15 14:57</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>125</td><td>long</td><td>10-15 18:37</td><td class="num">7788.25</td><td class="num">7786.25</td><td class="num">7792.25</td><td>10-15 19:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>126</td><td>long</td><td>10-15 19:06</td><td class="num">7785.00</td><td class="num">7783.00</td><td class="num">7785.50</td><td>10-15 19:06</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>127</td><td>long</td><td>10-15 19:08</td><td class="num">7786.25</td><td class="num">7783.50</td><td class="num">7792.25</td><td>10-15 19:19</td><td>stop</td><td class="num neg">−$18.00</td><td class="num">-1.31</td><td></td></tr>
+<tr><td>128</td><td>short</td><td>10-15 20:10</td><td class="num">7783.50</td><td class="num">7785.50</td><td class="num">7783.00</td><td>10-15 20:10</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>129</td><td>short</td><td>10-15 20:14</td><td class="num">7785.25</td><td class="num">7787.25</td><td class="num">7783.00</td><td>10-15 20:16</td><td>target</td><td class="num pos">+$8.25</td><td class="num">0.83</td><td>floor</td></tr>
+<tr><td>130</td><td>long</td><td>10-15 23:28</td><td class="num">7791.75</td><td class="num">7789.75</td><td class="num">7791.50</td><td>10-15 23:28</td><td>target</td><td class="num neg">−$4.25</td><td class="num">-0.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>131</td><td>short</td><td>10-15 23:54</td><td class="num">7803.00</td><td class="num">7805.00</td><td class="num">7802.50</td><td>10-15 23:54</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>132</td><td>long</td><td>10-16 01:31</td><td class="num">7801.25</td><td class="num">7799.25</td><td class="num">7801.75</td><td>10-16 01:31</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>133</td><td>long</td><td>10-16 02:14</td><td class="num">7797.25</td><td class="num">7795.25</td><td class="num">7797.25</td><td>10-16 02:14</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>134</td><td>short</td><td>10-16 02:53</td><td class="num">7798.25</td><td class="num">7800.25</td><td class="num">7793.00</td><td>10-16 03:01</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>135</td><td>short</td><td>10-16 03:19</td><td class="num">7802.00</td><td class="num">7804.00</td><td class="num">7793.00</td><td>10-16 04:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+</tbody></table></div></details>
+<details><summary>HTF-b: 116 trades</summary>
+<div class="scroll"><table class="trades"><thead><tr><th>#</th><th>Side</th><th>Entry (ET)</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Target</th><th>Exit (ET)</th><th>Exit by</th><th class="num">Net $</th><th class="num">R</th><th>Flags</th></tr></thead><tbody>
+<tr><td>0</td><td>long</td><td>10-05 03:26</td><td class="num">7765.25</td><td class="num">7762.75</td><td class="num">7771.75</td><td>10-05 03:27</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>1</td><td>long</td><td>10-05 04:39</td><td class="num">7770.75</td><td class="num">7767.25</td><td class="num">7771.75</td><td>10-05 04:42</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R</td></tr>
+<tr><td>2</td><td>short</td><td>10-05 06:58</td><td class="num">7769.75</td><td class="num">7772.00</td><td class="num">7765.50</td><td>10-05 07:00</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>3</td><td>short</td><td>10-05 08:08</td><td class="num">7776.25</td><td class="num">7778.25</td><td class="num">7765.50</td><td>10-05 08:11</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>4</td><td>short</td><td>10-05 09:15</td><td class="num">7772.25</td><td class="num">7774.25</td><td class="num">7765.50</td><td>10-05 09:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>5</td><td>short</td><td>10-05 09:23</td><td class="num">7775.50</td><td class="num">7777.50</td><td class="num">7765.50</td><td>10-05 09:27</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>6</td><td>short</td><td>10-05 09:35</td><td class="num">7789.25</td><td class="num">7791.25</td><td class="num">7765.50</td><td>10-05 09:35</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>7</td><td>short</td><td>10-05 14:31</td><td class="num">7833.50</td><td class="num">7835.50</td><td class="num">7809.25</td><td>10-05 14:57</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>8</td><td>long</td><td>10-05 15:49</td><td class="num">7831.75</td><td class="num">7829.75</td><td class="num">7847.75</td><td>10-05 15:50</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>9</td><td>long</td><td>10-05 15:53</td><td class="num">7825.25</td><td class="num">7823.25</td><td class="num">7847.75</td><td>10-05 15:53</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>10</td><td>short</td><td>10-05 18:03</td><td class="num">7832.50</td><td class="num">7834.50</td><td class="num">7821.00</td><td>10-05 18:04</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>11</td><td>short</td><td>10-05 18:06</td><td class="num">7833.00</td><td class="num">7836.00</td><td class="num">7821.00</td><td>10-05 20:59</td><td>stop</td><td class="num neg">−$19.25</td><td class="num">-1.28</td><td></td></tr>
+<tr><td>12</td><td>short</td><td>10-05 23:07</td><td class="num">7833.75</td><td class="num">7835.75</td><td class="num">7821.00</td><td>10-05 23:23</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>13</td><td>short</td><td>10-06 00:11</td><td class="num">7835.25</td><td class="num">7837.25</td><td class="num">7821.00</td><td>10-06 02:15</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>14</td><td>long</td><td>10-06 03:06</td><td class="num">7838.00</td><td class="num">7836.00</td><td class="num">7847.75</td><td>10-06 03:07</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>15</td><td>long</td><td>10-06 03:09</td><td class="num">7837.25</td><td class="num">7835.25</td><td class="num">7847.75</td><td>10-06 05:11</td><td>target</td><td class="num pos">+$49.50</td><td class="num">4.95</td><td></td></tr>
+<tr><td>16</td><td>short</td><td>10-06 06:27</td><td class="num">7844.75</td><td class="num">7846.75</td><td class="num">7839.50</td><td>10-06 06:40</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>17</td><td>short</td><td>10-06 09:09</td><td class="num">7862.00</td><td class="num">7864.00</td><td class="num">7839.50</td><td>10-06 09:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>18</td><td>short</td><td>10-06 09:14</td><td class="num">7862.00</td><td class="num">7864.25</td><td class="num">7839.50</td><td>10-06 09:25</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>19</td><td>short</td><td>10-06 14:54</td><td class="num">7881.00</td><td class="num">7883.00</td><td class="num">7876.75</td><td>10-06 15:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>20</td><td>short</td><td>10-06 16:23</td><td class="num">7877.50</td><td class="num">7879.50</td><td class="num">7876.75</td><td>10-06 16:27</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>21</td><td>short</td><td>10-06 16:54</td><td class="num">7879.00</td><td class="num">7881.00</td><td class="num">7876.75</td><td>10-06 16:59</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>22</td><td>long</td><td>10-07 05:10</td><td class="num">7870.75</td><td class="num">7868.75</td><td class="num">7879.25</td><td>10-07 05:16</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>23</td><td>short</td><td>10-07 14:59</td><td class="num">7856.00</td><td class="num">7858.00</td><td class="num">7841.25</td><td>10-07 15:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>24</td><td>long</td><td>10-07 16:24</td><td class="num">7850.75</td><td class="num">7848.75</td><td class="num">7856.25</td><td>10-07 16:36</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>25</td><td>long</td><td>10-07 16:40</td><td class="num">7848.75</td><td class="num">7846.75</td><td class="num">7850.50</td><td>10-07 16:44</td><td>target</td><td class="num pos">+$5.75</td><td class="num">0.58</td><td>floor, under 1R</td></tr>
+<tr><td>26</td><td>short</td><td>10-07 18:08</td><td class="num">7853.25</td><td class="num">7855.25</td><td class="num">7848.25</td><td>10-07 18:09</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>27</td><td>short</td><td>10-07 18:11</td><td class="num">7854.00</td><td class="num">7856.00</td><td class="num">7848.25</td><td>10-07 19:04</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>28</td><td>long</td><td>10-07 19:52</td><td class="num">7853.00</td><td class="num">7851.00</td><td class="num">7856.25</td><td>10-07 20:06</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>29</td><td>long</td><td>10-07 20:13</td><td class="num">7852.00</td><td class="num">7849.50</td><td class="num">7856.25</td><td>10-07 20:15</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>30</td><td>long</td><td>10-07 22:58</td><td class="num">7850.75</td><td class="num">7848.75</td><td class="num">7851.00</td><td>10-07 22:59</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>31</td><td>long</td><td>10-08 01:48</td><td class="num">7845.75</td><td class="num">7843.75</td><td class="num">7846.75</td><td>10-08 01:49</td><td>target</td><td class="num pos">+$2.00</td><td class="num">0.20</td><td>floor, under 1R</td></tr>
+<tr><td>32</td><td>long</td><td>10-08 04:57</td><td class="num">7823.75</td><td class="num">7821.75</td><td class="num">7830.00</td><td>10-08 05:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>33</td><td>short</td><td>10-08 07:28</td><td class="num">7815.00</td><td class="num">7817.00</td><td class="num">7809.25</td><td>10-08 07:40</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>34</td><td>long</td><td>10-08 10:57</td><td class="num">7831.75</td><td class="num">7829.75</td><td class="num">7833.25</td><td>10-08 11:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>under 1R</td></tr>
+<tr><td>35</td><td>long</td><td>10-08 16:47</td><td class="num">7819.25</td><td class="num">7817.25</td><td class="num">7824.50</td><td>10-08 18:03</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>36</td><td>short</td><td>10-08 20:38</td><td class="num">7830.25</td><td class="num">7832.25</td><td class="num">7825.00</td><td>10-08 20:45</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>37</td><td>long</td><td>10-08 23:14</td><td class="num">7832.50</td><td class="num">7830.50</td><td class="num">7833.25</td><td>10-08 23:15</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>38</td><td>long</td><td>10-09 00:54</td><td class="num">7837.25</td><td class="num">7835.25</td><td class="num">7837.75</td><td>10-09 00:54</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>39</td><td>short</td><td>10-09 01:33</td><td class="num">7840.75</td><td class="num">7842.75</td><td class="num">7839.50</td><td>10-09 01:37</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>40</td><td>short</td><td>10-09 01:41</td><td class="num">7841.75</td><td class="num">7843.75</td><td class="num">7841.25</td><td>10-09 01:47</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>41</td><td>short</td><td>10-09 02:42</td><td class="num">7841.50</td><td class="num">7843.50</td><td class="num">7841.25</td><td>10-09 02:43</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>42</td><td>short</td><td>10-09 10:28</td><td class="num">7841.00</td><td class="num">7843.25</td><td class="num">7841.25</td><td>10-09 10:28</td><td>target</td><td class="num neg">−$4.25</td><td class="num">-0.38</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>43</td><td>short</td><td>10-09 13:45</td><td class="num">7857.25</td><td class="num">7859.25</td><td class="num">7853.00</td><td>10-09 13:46</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>44</td><td>short</td><td>10-09 14:01</td><td class="num">7858.50</td><td class="num">7860.50</td><td class="num">7858.50</td><td>10-09 14:01</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>45</td><td>short</td><td>10-09 15:25</td><td class="num">7867.50</td><td class="num">7869.50</td><td class="num">7866.25</td><td>10-09 15:28</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.33</td><td>floor, under 1R</td></tr>
+<tr><td>46</td><td>short</td><td>10-09 16:53</td><td class="num">7866.00</td><td class="num">7868.00</td><td class="num">7858.50</td><td>10-11 18:00</td><td>stop</td><td class="num neg">−$36.75</td><td class="num">-3.68</td><td>floor</td></tr>
+<tr><td>47</td><td>long</td><td>10-11 18:57</td><td class="num">7867.75</td><td class="num">7865.75</td><td class="num">7869.25</td><td>10-11 19:08</td><td>target</td><td class="num pos">+$5.75</td><td class="num">0.58</td><td>floor, under 1R</td></tr>
+<tr><td>48</td><td>short</td><td>10-11 23:54</td><td class="num">7885.25</td><td class="num">7887.25</td><td class="num">7879.75</td><td>10-12 02:05</td><td>target</td><td class="num pos">+$24.50</td><td class="num">2.45</td><td>floor</td></tr>
+<tr><td>49</td><td>short</td><td>10-12 03:43</td><td class="num">7882.00</td><td class="num">7884.00</td><td class="num">7879.75</td><td>10-12 03:50</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>50</td><td>short</td><td>10-12 05:19</td><td class="num">7870.50</td><td class="num">7872.50</td><td class="num">7869.75</td><td>10-12 05:20</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>51</td><td>short</td><td>10-12 05:24</td><td class="num">7871.75</td><td class="num">7873.75</td><td class="num">7871.75</td><td>10-12 05:25</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>52</td><td>long</td><td>10-12 06:55</td><td class="num">7865.25</td><td class="num">7863.25</td><td class="num">7867.00</td><td>10-12 07:01</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>53</td><td>long</td><td>10-12 08:37</td><td class="num">7861.50</td><td class="num">7859.50</td><td class="num">7864.25</td><td>10-12 08:38</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>54</td><td>long</td><td>10-12 08:40</td><td class="num">7860.75</td><td class="num">7857.75</td><td class="num">7864.25</td><td>10-12 08:46</td><td>target</td><td class="num pos">+$14.50</td><td class="num">0.97</td><td></td></tr>
+<tr><td>55</td><td>short</td><td>10-12 09:08</td><td class="num">7865.25</td><td class="num">7867.25</td><td class="num">7865.25</td><td>10-12 09:08</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>56</td><td>long</td><td>10-12 09:52</td><td class="num">7861.75</td><td class="num">7859.75</td><td class="num">7864.25</td><td>10-12 09:56</td><td>target</td><td class="num pos">+$9.50</td><td class="num">0.95</td><td>floor</td></tr>
+<tr><td>57</td><td>short</td><td>10-12 11:01</td><td class="num">7857.50</td><td class="num">7859.50</td><td class="num">7853.00</td><td>10-12 11:08</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>58</td><td>long</td><td>10-12 12:28</td><td class="num">7858.00</td><td class="num">7856.00</td><td class="num">7858.25</td><td>10-12 12:30</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>under 1R</td></tr>
+<tr><td>59</td><td>short</td><td>10-12 14:47</td><td class="num">7850.50</td><td class="num">7852.50</td><td class="num">7850.25</td><td>10-12 14:49</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>60</td><td>long</td><td>10-12 18:58</td><td class="num">7858.75</td><td class="num">7856.75</td><td class="num">7859.50</td><td>10-12 19:04</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>61</td><td>long</td><td>10-12 19:10</td><td class="num">7855.00</td><td class="num">7853.00</td><td class="num">7856.25</td><td>10-12 19:13</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>62</td><td>short</td><td>10-12 21:10</td><td class="num">7849.00</td><td class="num">7851.00</td><td class="num">7848.25</td><td>10-12 21:11</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>63</td><td>short</td><td>10-12 21:13</td><td class="num">7849.75</td><td class="num">7853.00</td><td class="num">7848.25</td><td>10-12 21:22</td><td>target</td><td class="num pos">+$4.50</td><td class="num">0.28</td><td>under 1R</td></tr>
+<tr><td>64</td><td>long</td><td>10-12 21:36</td><td class="num">7844.25</td><td class="num">7842.25</td><td class="num">7846.75</td><td>10-12 21:37</td><td>target</td><td class="num pos">+$9.50</td><td class="num">0.95</td><td>floor</td></tr>
+<tr><td>65</td><td>long</td><td>10-13 00:52</td><td class="num">7841.00</td><td class="num">7839.00</td><td class="num">7841.75</td><td>10-13 00:56</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>66</td><td>short</td><td>10-13 01:13</td><td class="num">7847.25</td><td class="num">7849.25</td><td class="num">7846.00</td><td>10-13 01:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>67</td><td>short</td><td>10-13 08:28</td><td class="num">7852.75</td><td class="num">7854.75</td><td class="num">7850.25</td><td>10-13 08:28</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>68</td><td>short</td><td>10-13 09:42</td><td class="num">7861.25</td><td class="num">7863.50</td><td class="num">7860.00</td><td>10-13 09:42</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.29</td><td>under 1R</td></tr>
+<tr><td>69</td><td>long</td><td>10-13 10:09</td><td class="num">7849.50</td><td class="num">7847.25</td><td class="num">7850.00</td><td>10-13 10:10</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>70</td><td>long</td><td>10-13 10:58</td><td class="num">7845.50</td><td class="num">7843.50</td><td class="num">7846.75</td><td>10-13 10:59</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>71</td><td>short</td><td>10-13 12:20</td><td class="num">7845.75</td><td class="num">7847.75</td><td class="num">7845.00</td><td>10-13 12:25</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>72</td><td>short</td><td>10-13 12:28</td><td class="num">7846.00</td><td class="num">7848.00</td><td class="num">7846.00</td><td>10-13 12:29</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>73</td><td>long</td><td>10-13 13:04</td><td class="num">7846.50</td><td class="num">7844.50</td><td class="num">7846.75</td><td>10-13 13:04</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>74</td><td>long</td><td>10-13 13:21</td><td class="num">7846.75</td><td class="num">7844.75</td><td class="num">7846.75</td><td>10-13 13:21</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>75</td><td>short</td><td>10-13 14:12</td><td class="num">7855.00</td><td class="num">7857.00</td><td class="num">7854.75</td><td>10-13 14:12</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>76</td><td>short</td><td>10-13 15:11</td><td class="num">7857.00</td><td class="num">7859.00</td><td class="num">7854.75</td><td>10-13 15:14</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>77</td><td>long</td><td>10-13 15:59</td><td class="num">7855.00</td><td class="num">7852.50</td><td class="num">7856.25</td><td>10-13 15:59</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.26</td><td>under 1R</td></tr>
+<tr><td>78</td><td>long</td><td>10-13 19:09</td><td class="num">7856.00</td><td class="num">7854.00</td><td class="num">7856.25</td><td>10-13 19:14</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>79</td><td>short</td><td>10-13 20:16</td><td class="num">7856.25</td><td class="num">7858.25</td><td class="num">7854.75</td><td>10-13 20:23</td><td>target</td><td class="num pos">+$4.50</td><td class="num">0.45</td><td>floor, under 1R</td></tr>
+<tr><td>80</td><td>short</td><td>10-13 20:37</td><td class="num">7859.00</td><td class="num">7861.00</td><td class="num">7858.50</td><td>10-13 20:38</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>81</td><td>short</td><td>10-13 20:42</td><td class="num">7860.50</td><td class="num">7862.50</td><td class="num">7860.00</td><td>10-13 20:43</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>82</td><td>long</td><td>10-13 21:07</td><td class="num">7857.50</td><td class="num">7855.50</td><td class="num">7857.50</td><td>10-13 21:07</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>83</td><td>short</td><td>10-13 21:29</td><td class="num">7860.25</td><td class="num">7862.25</td><td class="num">7860.00</td><td>10-13 21:30</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>84</td><td>long</td><td>10-14 03:27</td><td class="num">7866.25</td><td class="num">7863.75</td><td class="num">7866.25</td><td>10-14 03:34</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>85</td><td>short</td><td>10-14 05:13</td><td class="num">7871.00</td><td class="num">7873.00</td><td class="num">7869.75</td><td>10-14 05:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>86</td><td>long</td><td>10-14 06:08</td><td class="num">7869.25</td><td class="num">7867.25</td><td class="num">7870.00</td><td>10-14 06:09</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>87</td><td>short</td><td>10-14 07:21</td><td class="num">7869.50</td><td class="num">7871.50</td><td class="num">7867.50</td><td>10-14 07:27</td><td>target</td><td class="num pos">+$7.00</td><td class="num">0.70</td><td>floor</td></tr>
+<tr><td>88</td><td>short</td><td>10-14 12:43</td><td class="num">7773.75</td><td class="num">7776.75</td><td class="num">7765.50</td><td>10-14 12:43</td><td>stop</td><td class="num neg">−$19.25</td><td class="num">-1.28</td><td></td></tr>
+<tr><td>89</td><td>short</td><td>10-14 19:06</td><td class="num">7753.50</td><td class="num">7756.75</td><td class="num">7744.75</td><td>10-14 19:51</td><td>target</td><td class="num pos">+$40.75</td><td class="num">2.51</td><td></td></tr>
+<tr><td>90</td><td>short</td><td>10-14 20:37</td><td class="num">7753.25</td><td class="num">7755.25</td><td class="num">7748.25</td><td>10-14 20:42</td><td>target</td><td class="num pos">+$22.00</td><td class="num">2.20</td><td>floor</td></tr>
+<tr><td>91</td><td>short</td><td>10-15 00:26</td><td class="num">7740.50</td><td class="num">7742.50</td><td class="num">7729.50</td><td>10-15 00:27</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>92</td><td>long</td><td>10-15 01:29</td><td class="num">7742.75</td><td class="num">7740.75</td><td class="num">7757.00</td><td>10-15 01:30</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>93</td><td>long</td><td>10-15 01:35</td><td class="num">7738.75</td><td class="num">7736.75</td><td class="num">7757.00</td><td>10-15 01:42</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>94</td><td>short</td><td>10-15 02:10</td><td class="num">7744.75</td><td class="num">7746.75</td><td class="num">7744.75</td><td>10-15 02:10</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>95</td><td>long</td><td>10-15 02:51</td><td class="num">7734.00</td><td class="num">7731.75</td><td class="num">7736.50</td><td>10-15 02:52</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>96</td><td>short</td><td>10-15 03:12</td><td class="num">7738.25</td><td class="num">7740.25</td><td class="num">7729.50</td><td>10-15 03:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>97</td><td>long</td><td>10-15 05:33</td><td class="num">7747.50</td><td class="num">7743.75</td><td class="num">7757.00</td><td>10-15 06:04</td><td>stop</td><td class="num neg">−$23.00</td><td class="num">-1.23</td><td></td></tr>
+<tr><td>98</td><td>long</td><td>10-15 06:08</td><td class="num">7745.50</td><td class="num">7743.50</td><td class="num">7757.00</td><td>10-15 06:34</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>99</td><td>short</td><td>10-15 07:04</td><td class="num">7744.50</td><td class="num">7748.25</td><td class="num">7744.00</td><td>10-15 07:04</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.03</td><td>under 1R</td></tr>
+<tr><td>100</td><td>short</td><td>10-15 07:35</td><td class="num">7752.50</td><td class="num">7755.00</td><td class="num">7748.25</td><td>10-15 07:37</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>101</td><td>short</td><td>10-15 08:28</td><td class="num">7748.00</td><td class="num">7751.50</td><td class="num">7748.00</td><td>10-15 08:29</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>102</td><td>long</td><td>10-15 12:24</td><td class="num">7766.75</td><td class="num">7763.25</td><td class="num">7769.75</td><td>10-15 12:25</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R</td></tr>
+<tr><td>103</td><td>long</td><td>10-15 12:27</td><td class="num">7764.75</td><td class="num">7762.50</td><td class="num">7769.75</td><td>10-15 12:34</td><td>target</td><td class="num pos">+$22.00</td><td class="num">1.96</td><td></td></tr>
+<tr><td>104</td><td>long</td><td>10-15 14:07</td><td class="num">7778.25</td><td class="num">7776.00</td><td class="num">7779.50</td><td>10-15 14:08</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>105</td><td>long</td><td>10-15 14:15</td><td class="num">7769.50</td><td class="num">7767.50</td><td class="num">7769.75</td><td>10-15 14:15</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>106</td><td>short</td><td>10-15 14:57</td><td class="num">7777.75</td><td class="num">7779.75</td><td class="num">7777.75</td><td>10-15 14:57</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>107</td><td>long</td><td>10-15 18:37</td><td class="num">7788.25</td><td class="num">7786.25</td><td class="num">7792.25</td><td>10-15 19:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td></td></tr>
+<tr><td>108</td><td>short</td><td>10-15 20:10</td><td class="num">7783.50</td><td class="num">7785.50</td><td class="num">7783.00</td><td>10-15 20:10</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>109</td><td>short</td><td>10-15 20:14</td><td class="num">7785.25</td><td class="num">7787.25</td><td class="num">7783.00</td><td>10-15 20:16</td><td>target</td><td class="num pos">+$8.25</td><td class="num">0.83</td><td>floor</td></tr>
+<tr><td>110</td><td>long</td><td>10-15 23:28</td><td class="num">7791.75</td><td class="num">7789.75</td><td class="num">7791.50</td><td>10-15 23:28</td><td>target</td><td class="num neg">−$4.25</td><td class="num">-0.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>111</td><td>short</td><td>10-15 23:54</td><td class="num">7803.00</td><td class="num">7805.00</td><td class="num">7802.50</td><td>10-15 23:54</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>112</td><td>short</td><td>10-16 01:59</td><td class="num">7803.25</td><td class="num">7805.25</td><td class="num">7802.50</td><td>10-16 02:02</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>113</td><td>long</td><td>10-16 02:14</td><td class="num">7797.25</td><td class="num">7795.25</td><td class="num">7797.25</td><td>10-16 02:14</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>114</td><td>short</td><td>10-16 02:53</td><td class="num">7798.25</td><td class="num">7800.25</td><td class="num">7793.00</td><td>10-16 03:01</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>115</td><td>short</td><td>10-16 03:19</td><td class="num">7802.00</td><td class="num">7804.00</td><td class="num">7793.00</td><td>10-16 04:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+</tbody></table></div></details>
+<details><summary>HTF-c: 39 trades</summary>
+<div class="scroll"><table class="trades"><thead><tr><th>#</th><th>Side</th><th>Entry (ET)</th><th class="num">Entry</th><th class="num">Stop</th><th class="num">Target</th><th>Exit (ET)</th><th>Exit by</th><th class="num">Net $</th><th class="num">R</th><th>Flags</th></tr></thead><tbody>
+<tr><td>0</td><td>long</td><td>10-05 03:26</td><td class="num">7765.25</td><td class="num">7762.75</td><td class="num">7771.75</td><td>10-05 03:27</td><td>stop</td><td class="num neg">−$16.75</td><td class="num">-1.34</td><td></td></tr>
+<tr><td>1</td><td>long</td><td>10-05 04:39</td><td class="num">7770.75</td><td class="num">7767.25</td><td class="num">7771.75</td><td>10-05 04:42</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R</td></tr>
+<tr><td>2</td><td>short</td><td>10-05 06:58</td><td class="num">7769.75</td><td class="num">7772.00</td><td class="num">7765.50</td><td>10-05 07:00</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>3</td><td>long</td><td>10-05 19:53</td><td class="num">7831.50</td><td class="num">7829.50</td><td class="num">7836.25</td><td>10-05 20:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>4</td><td>short</td><td>10-06 06:27</td><td class="num">7844.75</td><td class="num">7846.75</td><td class="num">7839.50</td><td>10-06 06:40</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>5</td><td>short</td><td>10-06 09:09</td><td class="num">7862.00</td><td class="num">7864.00</td><td class="num">7839.50</td><td>10-06 09:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>6</td><td>short</td><td>10-06 09:14</td><td class="num">7862.00</td><td class="num">7864.25</td><td class="num">7839.50</td><td>10-06 09:25</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td></td></tr>
+<tr><td>7</td><td>short</td><td>10-06 14:54</td><td class="num">7881.00</td><td class="num">7883.00</td><td class="num">7876.75</td><td>10-06 15:00</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>8</td><td>short</td><td>10-06 16:23</td><td class="num">7877.50</td><td class="num">7879.50</td><td class="num">7876.75</td><td>10-06 16:27</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>9</td><td>short</td><td>10-07 18:08</td><td class="num">7853.25</td><td class="num">7855.25</td><td class="num">7848.25</td><td>10-07 18:09</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>10</td><td>short</td><td>10-07 18:11</td><td class="num">7854.00</td><td class="num">7856.00</td><td class="num">7848.25</td><td>10-07 19:04</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>11</td><td>long</td><td>10-07 19:52</td><td class="num">7853.00</td><td class="num">7851.00</td><td class="num">7856.25</td><td>10-07 20:06</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>12</td><td>long</td><td>10-08 23:14</td><td class="num">7832.50</td><td class="num">7830.50</td><td class="num">7833.25</td><td>10-08 23:15</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>13</td><td>short</td><td>10-09 02:42</td><td class="num">7841.50</td><td class="num">7843.50</td><td class="num">7841.25</td><td>10-09 02:43</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>floor, under 1R</td></tr>
+<tr><td>14</td><td>long</td><td>10-11 18:57</td><td class="num">7867.75</td><td class="num">7865.75</td><td class="num">7869.25</td><td>10-11 19:08</td><td>target</td><td class="num pos">+$5.75</td><td class="num">0.58</td><td>floor, under 1R</td></tr>
+<tr><td>15</td><td>short</td><td>10-11 23:54</td><td class="num">7885.25</td><td class="num">7887.25</td><td class="num">7879.75</td><td>10-12 02:05</td><td>target</td><td class="num pos">+$24.50</td><td class="num">2.45</td><td>floor</td></tr>
+<tr><td>16</td><td>short</td><td>10-12 03:43</td><td class="num">7882.00</td><td class="num">7884.00</td><td class="num">7879.75</td><td>10-12 03:50</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>17</td><td>short</td><td>10-12 05:19</td><td class="num">7870.50</td><td class="num">7872.50</td><td class="num">7869.75</td><td>10-12 05:20</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>18</td><td>short</td><td>10-12 05:24</td><td class="num">7871.75</td><td class="num">7873.75</td><td class="num">7871.75</td><td>10-12 05:25</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>19</td><td>long</td><td>10-12 12:28</td><td class="num">7858.00</td><td class="num">7856.00</td><td class="num">7858.25</td><td>10-12 12:30</td><td>target</td><td class="num neg">−$1.75</td><td class="num">-0.18</td><td>under 1R</td></tr>
+<tr><td>20</td><td>long</td><td>10-12 18:58</td><td class="num">7858.75</td><td class="num">7856.75</td><td class="num">7859.50</td><td>10-12 19:04</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>21</td><td>long</td><td>10-12 21:36</td><td class="num">7844.25</td><td class="num">7842.25</td><td class="num">7846.75</td><td>10-12 21:37</td><td>target</td><td class="num pos">+$9.50</td><td class="num">0.95</td><td>floor</td></tr>
+<tr><td>22</td><td>short</td><td>10-13 01:13</td><td class="num">7847.25</td><td class="num">7849.25</td><td class="num">7846.00</td><td>10-13 01:17</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+<tr><td>23</td><td>short</td><td>10-13 08:28</td><td class="num">7852.75</td><td class="num">7854.75</td><td class="num">7850.25</td><td>10-13 08:28</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>24</td><td>short</td><td>10-13 09:42</td><td class="num">7861.25</td><td class="num">7863.50</td><td class="num">7860.00</td><td>10-13 09:42</td><td>target</td><td class="num pos">+$3.25</td><td class="num">0.29</td><td>under 1R</td></tr>
+<tr><td>25</td><td>long</td><td>10-13 10:09</td><td class="num">7849.50</td><td class="num">7847.25</td><td class="num">7850.00</td><td>10-13 10:10</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>26</td><td>long</td><td>10-13 21:07</td><td class="num">7857.50</td><td class="num">7855.50</td><td class="num">7857.50</td><td>10-13 21:07</td><td>target</td><td class="num neg">−$3.00</td><td class="num">-0.30</td><td>floor, under 1R, target at or behind entry</td></tr>
+<tr><td>27</td><td>long</td><td>10-14 06:08</td><td class="num">7869.25</td><td class="num">7867.25</td><td class="num">7870.00</td><td>10-14 06:09</td><td>target</td><td class="num pos">+$0.75</td><td class="num">0.08</td><td>floor, under 1R</td></tr>
+<tr><td>28</td><td>short</td><td>10-14 07:21</td><td class="num">7869.50</td><td class="num">7871.50</td><td class="num">7867.50</td><td>10-14 07:27</td><td>target</td><td class="num pos">+$7.00</td><td class="num">0.70</td><td>floor</td></tr>
+<tr><td>29</td><td>short</td><td>10-14 12:43</td><td class="num">7773.75</td><td class="num">7776.75</td><td class="num">7765.50</td><td>10-14 12:43</td><td>stop</td><td class="num neg">−$19.25</td><td class="num">-1.28</td><td></td></tr>
+<tr><td>30</td><td>short</td><td>10-14 19:06</td><td class="num">7753.50</td><td class="num">7756.75</td><td class="num">7744.75</td><td>10-14 19:51</td><td>target</td><td class="num pos">+$40.75</td><td class="num">2.51</td><td></td></tr>
+<tr><td>31</td><td>long</td><td>10-15 01:29</td><td class="num">7742.75</td><td class="num">7740.75</td><td class="num">7757.00</td><td>10-15 01:30</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>32</td><td>short</td><td>10-15 02:10</td><td class="num">7744.75</td><td class="num">7746.75</td><td class="num">7744.75</td><td>10-15 02:10</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>33</td><td>short</td><td>10-15 03:12</td><td class="num">7738.25</td><td class="num">7740.25</td><td class="num">7729.50</td><td>10-15 03:12</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor</td></tr>
+<tr><td>34</td><td>short</td><td>10-15 08:28</td><td class="num">7748.00</td><td class="num">7751.50</td><td class="num">7748.00</td><td>10-15 08:29</td><td>stop</td><td class="num neg">−$21.75</td><td class="num">-1.24</td><td>under 1R, target at or behind entry</td></tr>
+<tr><td>35</td><td>long</td><td>10-15 14:07</td><td class="num">7778.25</td><td class="num">7776.00</td><td class="num">7779.50</td><td>10-15 14:08</td><td>stop</td><td class="num neg">−$15.50</td><td class="num">-1.38</td><td>under 1R</td></tr>
+<tr><td>36</td><td>short</td><td>10-15 20:10</td><td class="num">7783.50</td><td class="num">7785.50</td><td class="num">7783.00</td><td>10-15 20:10</td><td>target</td><td class="num neg">−$0.50</td><td class="num">-0.05</td><td>floor, under 1R</td></tr>
+<tr><td>37</td><td>short</td><td>10-15 20:14</td><td class="num">7785.25</td><td class="num">7787.25</td><td class="num">7783.00</td><td>10-15 20:16</td><td>target</td><td class="num pos">+$8.25</td><td class="num">0.83</td><td>floor</td></tr>
+<tr><td>38</td><td>short</td><td>10-15 23:54</td><td class="num">7803.00</td><td class="num">7805.00</td><td class="num">7802.50</td><td>10-15 23:54</td><td>stop</td><td class="num neg">−$14.25</td><td class="num">-1.43</td><td>floor, under 1R</td></tr>
+</tbody></table></div></details>
+</main>
+<script>
+const SERIES = [{"id":"HTF-a","pts":[{"x":1791169200000,"y":0,"label":"start"},{"x":1791185220000,"y":-16.75,"label":"#0 long stop"},{"x":1791189720000,"y":-38.5,"label":"#1 long stop"},{"x":1791192900000,"y":-52.75,"label":"#2 long stop"},{"x":1791193320000,"y":-67,"label":"#3 long stop"},{"x":1791198000000,"y":-82.5,"label":"#4 short stop"},{"x":1791202260000,"y":-96.75,"label":"#5 short stop"},{"x":1791202560000,"y":-111,"label":"#6 short stop"},{"x":1791204720000,"y":-52.75,"label":"#7 short target"},{"x":1791206220000,"y":-67,"label":"#8 short stop"},{"x":1791206820000,"y":-81.25,"label":"#9 short stop"},{"x":1791207300000,"y":-95.5,"label":"#10 short stop"},{"x":1791229800000,"y":-109.75,"label":"#11 long stop"},{"x":1791229980000,"y":-124,"label":"#12 long stop"},{"x":1791242400000,"y":-138.25,"label":"#13 short stop"},{"x":1791244800000,"y":-152.5,"label":"#14 long stop"},{"x":1791254100000,"y":-166.75,"label":"#15 long stop"},{"x":1791256980000,"y":-181,"label":"#16 short stop"},{"x":1791267300000,"y":-195.25,"label":"#17 short stop"},{"x":1791270420000,"y":-209.5,"label":"#18 long stop"},{"x":1791277860000,"y":-160,"label":"#19 long target"},{"x":1791283200000,"y":-174.25,"label":"#20 short stop"},{"x":1791292320000,"y":-188.5,"label":"#21 short stop"},{"x":1791293100000,"y":-204,"label":"#22 short stop"},{"x":1791313200000,"y":-218.25,"label":"#23 short stop"},{"x":1791318420000,"y":-217.5,"label":"#24 short target"},{"x":1791320340000,"y":-231.75,"label":"#25 short stop"},{"x":1791324720000,"y":-246,"label":"#26 short stop"},{"x":1791332100000,"y":-260.25,"label":"#27 short stop"},{"x":1791338400000,"y":-242,"label":"#28 short target"},{"x":1791364560000,"y":-256.25,"label":"#29 long stop"},{"x":1791372600000,"y":-270.5,"label":"#30 long stop"},{"x":1791373140000,"y":-288.5,"label":"#31 long stop"},{"x":1791373560000,"y":-302.75,"label":"#32 long stop"},{"x":1791387300000,"y":-319.5,"label":"#33 short stop"},{"x":1791387720000,"y":-335,"label":"#34 short stop"},{"x":1791399600000,"y":-349.25,"label":"#35 short stop"},{"x":1791438960000,"y":-274.75,"label":"#36 short target"},{"x":1791450000000,"y":-289,"label":"#37 long stop"},{"x":1791466200000,"y":-273.25,"label":"#38 short target"},{"x":1791472680000,"y":-287.5,"label":"#39 long stop"},{"x":1791496980000,"y":-301.75,"label":"#40 long stop"},{"x":1791506700000,"y":-316,"label":"#41 short stop"},{"x":1791515700000,"y":-315.25,"label":"#42 long target"},{"x":1791521640000,"y":-315.75,"label":"#43 long target"},{"x":1791524220000,"y":-330,"label":"#44 short stop"},{"x":1791524820000,"y":-330.5,"label":"#45 short target"},{"x":1791528180000,"y":-332.25,"label":"#46 short target"},{"x":1791539340000,"y":-331.5,"label":"#47 long target"},{"x":1791547260000,"y":-345.75,"label":"#48 short stop"},{"x":1791547500000,"y":-341.25,"label":"#49 short target"},{"x":1791556080000,"y":-345.5,"label":"#50 short target"},{"x":1791561600000,"y":-336,"label":"#51 short target"},{"x":1791567960000,"y":-350.25,"label":"#52 short stop"},{"x":1791568860000,"y":-353.25,"label":"#53 short target"},{"x":1791574080000,"y":-350,"label":"#54 short target"},{"x":1791756000000,"y":-386.75,"label":"#55 short stop"},{"x":1791760080000,"y":-381,"label":"#56 long target"},{"x":1791760800000,"y":-395.25,"label":"#57 short stop"},{"x":1791760980000,"y":-397,"label":"#58 short target"},{"x":1791785100000,"y":-372.5,"label":"#59 short target"},{"x":1791791400000,"y":-386.75,"label":"#60 short stop"},{"x":1791796800000,"y":-401,"label":"#61 short stop"},{"x":1791797100000,"y":-404,"label":"#62 short target"},{"x":1791808680000,"y":-418.25,"label":"#63 long stop"},{"x":1791809160000,"y":-403.75,"label":"#64 long target"},{"x":1791810480000,"y":-406.75,"label":"#65 short target"},{"x":1791813360000,"y":-397.25,"label":"#66 long target"},{"x":1791817680000,"y":-411.5,"label":"#67 short stop"},{"x":1791822600000,"y":-413.25,"label":"#68 long target"},{"x":1791830940000,"y":-415,"label":"#69 short target"},{"x":1791846240000,"y":-429.25,"label":"#70 long stop"},{"x":1791846780000,"y":-443.5,"label":"#71 long stop"},{"x":1791852480000,"y":-445.25,"label":"#72 long target"},{"x":1791855420000,"y":-435.75,"label":"#73 long target"},{"x":1791867360000,"y":-435,"label":"#74 long target"},{"x":1791868620000,"y":-449.25,"label":"#75 short stop"},{"x":1791887700000,"y":-451,"label":"#76 long target"},{"x":1791894480000,"y":-465.25,"label":"#77 short stop"},{"x":1791898920000,"y":-462,"label":"#78 short target"},{"x":1791900600000,"y":-477.5,"label":"#79 long stop"},{"x":1791903540000,"y":-491.75,"label":"#80 long stop"},{"x":1791908700000,"y":-506,"label":"#81 short stop"},{"x":1791908940000,"y":-520.25,"label":"#82 short stop"},{"x":1791911040000,"y":-522,"label":"#83 long target"},{"x":1791912060000,"y":-525,"label":"#84 long target"},{"x":1791915120000,"y":-526.75,"label":"#85 short target"},{"x":1791918840000,"y":-541,"label":"#86 short stop"},{"x":1791921540000,"y":-537.75,"label":"#87 long target"},{"x":1791937380000,"y":-533.25,"label":"#88 short target"},{"x":1791938280000,"y":-547.5,"label":"#89 short stop"},{"x":1791938580000,"y":-548,"label":"#90 short target"},{"x":1791940020000,"y":-551,"label":"#91 long target"},{"x":1791941400000,"y":-552.75,"label":"#92 short target"},{"x":1791943020000,"y":-553.25,"label":"#93 short target"},{"x":1791954780000,"y":-557.5,"label":"#94 long target"},{"x":1791963240000,"y":-574.25,"label":"#95 long stop"},{"x":1791969420000,"y":-588.5,"label":"#96 short stop"},{"x":1791972540000,"y":-587.75,"label":"#97 long target"},{"x":1791977220000,"y":-580.75,"label":"#98 short target"},{"x":1791996180000,"y":-600,"label":"#99 short stop"},{"x":1792005900000,"y":-599.25,"label":"#100 short target"},{"x":1792021860000,"y":-558.5,"label":"#101 short target"},{"x":1792023180000,"y":-572.75,"label":"#102 long stop"},{"x":1792024920000,"y":-550.75,"label":"#103 short target"},{"x":1792038420000,"y":-565,"label":"#104 short stop"},{"x":1792039860000,"y":-584.25,"label":"#105 short stop"},{"x":1792042200000,"y":-598.5,"label":"#106 long stop"},{"x":1792042920000,"y":-612.75,"label":"#107 long stop"},{"x":1792044600000,"y":-627,"label":"#108 short stop"},{"x":1792047120000,"y":-642.5,"label":"#109 long stop"},{"x":1792048320000,"y":-656.75,"label":"#110 short stop"},{"x":1792058640000,"y":-679.75,"label":"#111 long stop"},{"x":1792060440000,"y":-694,"label":"#112 long stop"},{"x":1792062240000,"y":-694.5,"label":"#113 short target"},{"x":1792064220000,"y":-711.25,"label":"#114 short stop"},{"x":1792067340000,"y":-733,"label":"#115 short stop"},{"x":1792070940000,"y":-751,"label":"#116 long stop"},{"x":1792071240000,"y":-775.25,"label":"#117 long stop"},{"x":1792071960000,"y":-819.5,"label":"#118 long stop"},{"x":1792072860000,"y":-735,"label":"#119 long target"},{"x":1792081500000,"y":-756.75,"label":"#120 long stop"},{"x":1792082040000,"y":-734.75,"label":"#121 long target"},{"x":1792087680000,"y":-750.25,"label":"#122 long stop"},{"x":1792088100000,"y":-752,"label":"#123 long target"},{"x":1792090620000,"y":-766.25,"label":"#124 short stop"},{"x":1792105200000,"y":-780.5,"label":"#125 long stop"},{"x":1792105560000,"y":-794.75,"label":"#126 long stop"},{"x":1792106340000,"y":-812.75,"label":"#127 long stop"},{"x":1792109400000,"y":-813.25,"label":"#128 short target"},{"x":1792109760000,"y":-805,"label":"#129 short target"},{"x":1792121280000,"y":-809.25,"label":"#130 long target"},{"x":1792122840000,"y":-823.5,"label":"#131 short stop"},{"x":1792128660000,"y":-824,"label":"#132 long target"},{"x":1792131240000,"y":-838.25,"label":"#133 long stop"},{"x":1792134060000,"y":-852.5,"label":"#134 short stop"},{"x":1792137600000,"y":-866.75,"label":"#135 short stop"}]},{"id":"HTF-b","pts":[{"x":1791169200000,"y":0,"label":"start"},{"x":1791185220000,"y":-16.75,"label":"#0 long stop"},{"x":1791189720000,"y":-38.5,"label":"#1 long stop"},{"x":1791198000000,"y":-54,"label":"#2 short stop"},{"x":1791202260000,"y":-68.25,"label":"#3 short stop"},{"x":1791206220000,"y":-82.5,"label":"#4 short stop"},{"x":1791206820000,"y":-96.75,"label":"#5 short stop"},{"x":1791207300000,"y":-111,"label":"#6 short stop"},{"x":1791226620000,"y":-125.25,"label":"#7 short stop"},{"x":1791229800000,"y":-139.5,"label":"#8 long stop"},{"x":1791229980000,"y":-153.75,"label":"#9 long stop"},{"x":1791237840000,"y":-168,"label":"#10 short stop"},{"x":1791248340000,"y":-187.25,"label":"#11 short stop"},{"x":1791256980000,"y":-201.5,"label":"#12 short stop"},{"x":1791267300000,"y":-215.75,"label":"#13 short stop"},{"x":1791270420000,"y":-230,"label":"#14 long stop"},{"x":1791277860000,"y":-180.5,"label":"#15 long target"},{"x":1791283200000,"y":-194.75,"label":"#16 short stop"},{"x":1791292320000,"y":-209,"label":"#17 short stop"},{"x":1791293100000,"y":-224.5,"label":"#18 short stop"},{"x":1791313200000,"y":-238.75,"label":"#19 short stop"},{"x":1791318420000,"y":-238,"label":"#20 short target"},{"x":1791320340000,"y":-252.25,"label":"#21 short stop"},{"x":1791364560000,"y":-266.5,"label":"#22 long stop"},{"x":1791399600000,"y":-280.75,"label":"#23 short stop"},{"x":1791405360000,"y":-295,"label":"#24 long stop"},{"x":1791405840000,"y":-289.25,"label":"#25 long target"},{"x":1791410940000,"y":-303.5,"label":"#26 short stop"},{"x":1791414240000,"y":-317.75,"label":"#27 short stop"},{"x":1791417960000,"y":-332,"label":"#28 long stop"},{"x":1791418500000,"y":-348.75,"label":"#29 long stop"},{"x":1791428340000,"y":-350.5,"label":"#30 long target"},{"x":1791438540000,"y":-348.5,"label":"#31 long target"},{"x":1791450000000,"y":-362.75,"label":"#32 long stop"},{"x":1791459600000,"y":-377,"label":"#33 short stop"},{"x":1791471600000,"y":-391.25,"label":"#34 long stop"},{"x":1791496980000,"y":-405.5,"label":"#35 long stop"},{"x":1791506700000,"y":-419.75,"label":"#36 short stop"},{"x":1791515700000,"y":-419,"label":"#37 long target"},{"x":1791521640000,"y":-419.5,"label":"#38 long target"},{"x":1791524220000,"y":-433.75,"label":"#39 short stop"},{"x":1791524820000,"y":-434.25,"label":"#40 short target"},{"x":1791528180000,"y":-436,"label":"#41 short target"},{"x":1791556080000,"y":-440.25,"label":"#42 short target"},{"x":1791567960000,"y":-454.5,"label":"#43 short stop"},{"x":1791568860000,"y":-457.5,"label":"#44 short target"},{"x":1791574080000,"y":-454.25,"label":"#45 short target"},{"x":1791756000000,"y":-491,"label":"#46 short stop"},{"x":1791760080000,"y":-485.25,"label":"#47 long target"},{"x":1791785100000,"y":-460.75,"label":"#48 short target"},{"x":1791791400000,"y":-475,"label":"#49 short stop"},{"x":1791796800000,"y":-489.25,"label":"#50 short stop"},{"x":1791797100000,"y":-492.25,"label":"#51 short target"},{"x":1791802860000,"y":-506.5,"label":"#52 long stop"},{"x":1791808680000,"y":-520.75,"label":"#53 long stop"},{"x":1791809160000,"y":-506.25,"label":"#54 long target"},{"x":1791810480000,"y":-509.25,"label":"#55 short target"},{"x":1791813360000,"y":-499.75,"label":"#56 long target"},{"x":1791817680000,"y":-514,"label":"#57 short stop"},{"x":1791822600000,"y":-515.75,"label":"#58 long target"},{"x":1791830940000,"y":-517.5,"label":"#59 short target"},{"x":1791846240000,"y":-531.75,"label":"#60 long stop"},{"x":1791846780000,"y":-546,"label":"#61 long stop"},{"x":1791853860000,"y":-560.25,"label":"#62 short stop"},{"x":1791854520000,"y":-555.75,"label":"#63 short target"},{"x":1791855420000,"y":-546.25,"label":"#64 long target"},{"x":1791867360000,"y":-545.5,"label":"#65 long target"},{"x":1791868620000,"y":-559.75,"label":"#66 short stop"},{"x":1791894480000,"y":-574,"label":"#67 short stop"},{"x":1791898920000,"y":-570.75,"label":"#68 short target"},{"x":1791900600000,"y":-586.25,"label":"#69 long stop"},{"x":1791903540000,"y":-600.5,"label":"#70 long stop"},{"x":1791908700000,"y":-614.75,"label":"#71 short stop"},{"x":1791908940000,"y":-629,"label":"#72 short stop"},{"x":1791911040000,"y":-630.75,"label":"#73 long target"},{"x":1791912060000,"y":-633.75,"label":"#74 long target"},{"x":1791915120000,"y":-635.5,"label":"#75 short target"},{"x":1791918840000,"y":-649.75,"label":"#76 short stop"},{"x":1791921540000,"y":-646.5,"label":"#77 long target"},{"x":1791933240000,"y":-648.25,"label":"#78 long target"},{"x":1791937380000,"y":-643.75,"label":"#79 short target"},{"x":1791938280000,"y":-658,"label":"#80 short stop"},{"x":1791938580000,"y":-658.5,"label":"#81 short target"},{"x":1791940020000,"y":-661.5,"label":"#82 long target"},{"x":1791941400000,"y":-663.25,"label":"#83 short target"},{"x":1791963240000,"y":-680,"label":"#84 long stop"},{"x":1791969420000,"y":-694.25,"label":"#85 short stop"},{"x":1791972540000,"y":-693.5,"label":"#86 long target"},{"x":1791977220000,"y":-686.5,"label":"#87 short target"},{"x":1791996180000,"y":-705.75,"label":"#88 short stop"},{"x":1792021860000,"y":-665,"label":"#89 short target"},{"x":1792024920000,"y":-643,"label":"#90 short target"},{"x":1792038420000,"y":-657.25,"label":"#91 short stop"},{"x":1792042200000,"y":-671.5,"label":"#92 long stop"},{"x":1792042920000,"y":-685.75,"label":"#93 long stop"},{"x":1792044600000,"y":-700,"label":"#94 short stop"},{"x":1792047120000,"y":-715.5,"label":"#95 long stop"},{"x":1792048320000,"y":-729.75,"label":"#96 short stop"},{"x":1792058640000,"y":-752.75,"label":"#97 long stop"},{"x":1792060440000,"y":-767,"label":"#98 long stop"},{"x":1792062240000,"y":-767.5,"label":"#99 short target"},{"x":1792064220000,"y":-784.25,"label":"#100 short stop"},{"x":1792067340000,"y":-806,"label":"#101 short stop"},{"x":1792081500000,"y":-827.75,"label":"#102 long stop"},{"x":1792082040000,"y":-805.75,"label":"#103 long target"},{"x":1792087680000,"y":-821.25,"label":"#104 long stop"},{"x":1792088100000,"y":-823,"label":"#105 long target"},{"x":1792090620000,"y":-837.25,"label":"#106 short stop"},{"x":1792105200000,"y":-851.5,"label":"#107 long stop"},{"x":1792109400000,"y":-852,"label":"#108 short target"},{"x":1792109760000,"y":-843.75,"label":"#109 short target"},{"x":1792121280000,"y":-848,"label":"#110 long target"},{"x":1792122840000,"y":-862.25,"label":"#111 short stop"},{"x":1792130520000,"y":-861.5,"label":"#112 short target"},{"x":1792131240000,"y":-875.75,"label":"#113 long stop"},{"x":1792134060000,"y":-890,"label":"#114 short stop"},{"x":1792137600000,"y":-904.25,"label":"#115 short stop"}]},{"id":"HTF-c","pts":[{"x":1791169200000,"y":0,"label":"start"},{"x":1791185220000,"y":-16.75,"label":"#0 long stop"},{"x":1791189720000,"y":-38.5,"label":"#1 long stop"},{"x":1791198000000,"y":-54,"label":"#2 short stop"},{"x":1791244800000,"y":-68.25,"label":"#3 long stop"},{"x":1791283200000,"y":-82.5,"label":"#4 short stop"},{"x":1791292320000,"y":-96.75,"label":"#5 short stop"},{"x":1791293100000,"y":-112.25,"label":"#6 short stop"},{"x":1791313200000,"y":-126.5,"label":"#7 short stop"},{"x":1791318420000,"y":-125.75,"label":"#8 short target"},{"x":1791410940000,"y":-140,"label":"#9 short stop"},{"x":1791414240000,"y":-154.25,"label":"#10 short stop"},{"x":1791417960000,"y":-168.5,"label":"#11 long stop"},{"x":1791515700000,"y":-167.75,"label":"#12 long target"},{"x":1791528180000,"y":-169.5,"label":"#13 short target"},{"x":1791760080000,"y":-163.75,"label":"#14 long target"},{"x":1791785100000,"y":-139.25,"label":"#15 short target"},{"x":1791791400000,"y":-153.5,"label":"#16 short stop"},{"x":1791796800000,"y":-167.75,"label":"#17 short stop"},{"x":1791797100000,"y":-170.75,"label":"#18 short target"},{"x":1791822600000,"y":-172.5,"label":"#19 long target"},{"x":1791846240000,"y":-186.75,"label":"#20 long stop"},{"x":1791855420000,"y":-177.25,"label":"#21 long target"},{"x":1791868620000,"y":-191.5,"label":"#22 short stop"},{"x":1791894480000,"y":-205.75,"label":"#23 short stop"},{"x":1791898920000,"y":-202.5,"label":"#24 short target"},{"x":1791900600000,"y":-218,"label":"#25 long stop"},{"x":1791940020000,"y":-221,"label":"#26 long target"},{"x":1791972540000,"y":-220.25,"label":"#27 long target"},{"x":1791977220000,"y":-213.25,"label":"#28 short target"},{"x":1791996180000,"y":-232.5,"label":"#29 short stop"},{"x":1792021860000,"y":-191.75,"label":"#30 short target"},{"x":1792042200000,"y":-206,"label":"#31 long stop"},{"x":1792044600000,"y":-220.25,"label":"#32 short stop"},{"x":1792048320000,"y":-234.5,"label":"#33 short stop"},{"x":1792067340000,"y":-256.25,"label":"#34 short stop"},{"x":1792087680000,"y":-271.75,"label":"#35 long stop"},{"x":1792109400000,"y":-272.25,"label":"#36 short target"},{"x":1792109760000,"y":-264,"label":"#37 short target"},{"x":1792122840000,"y":-278.25,"label":"#38 short stop"}]}];
+const COLORS = { 'HTF-a': 'var(--series-1)', 'HTF-b': 'var(--series-2)', 'HTF-c': 'var(--series-3)' };
+(function draw() {
+  const W = 960, Hh = 380, m = { l: 64, r: 120, t: 14, b: 34 };
+  const pw = W - m.l - m.r, ph = Hh - m.t - m.b;
+  const all = SERIES.flatMap((s) => s.pts);
+  const x0 = Math.min(...all.map((p) => p.x)), x1 = Math.max(...all.map((p) => p.x));
+  let y0 = Math.min(0, ...all.map((p) => p.y)), y1 = Math.max(0, ...all.map((p) => p.y));
+  const step = 200; y0 = Math.floor(y0 / step) * step; y1 = Math.max(Math.ceil(y1 / step) * step, 0);
+  if (y1 === 0) y1 = 100;
+  const X = (v) => m.l + ((v - x0) / (x1 - x0)) * pw;
+  const Y = (v) => m.t + ((y1 - v) / (y1 - y0)) * ph;
+  const ns = 'http://www.w3.org/2000/svg';
+  const el = (n, a, p) => { const e = document.createElementNS(ns, n); for (const k in a) e.setAttribute(k, a[k]); (p || svg).appendChild(e); return e; };
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + Hh);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Cumulative net P&L per run; all three end below zero. See the results table for exact values.');
+  for (let v = y0; v <= y1; v += step) {
+    el('line', { x1: m.l, x2: m.l + pw, y1: Y(v), y2: Y(v), stroke: v === 0 ? 'var(--axis)' : 'var(--grid)', 'stroke-width': v === 0 ? 1.5 : 1 });
+    const t = el('text', { x: m.l - 8, y: Y(v) + 4, 'text-anchor': 'end', class: 'tick' });
+    t.textContent = (v < 0 ? '−$' : '$') + Math.abs(v);
+  }
+  const fmtDay = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+  const day = 86400000;
+  for (let d = Math.ceil((x0 + 4 * 3600000) / day) * day - 4 * 3600000; d <= x1; d += day) {
+    const wd = new Date(d - 4 * 3600000).getUTCDay();
+    if (wd === 0 || wd === 6) continue;
+    el('line', { x1: X(d), x2: X(d), y1: m.t + ph, y2: m.t + ph + 4, stroke: 'var(--axis)' });
+    const t = el('text', { x: X(d), y: m.t + ph + 20, 'text-anchor': 'middle', class: 'tick' });
+    t.textContent = fmtDay.format(d);
+  }
+  const ends = [];
+  for (const s of SERIES) {
+    let dpath = '';
+    s.pts.forEach((p, i) => { dpath += (i === 0 ? 'M' : 'H' + X(p.x).toFixed(1) + 'V') + (i === 0 ? X(p.x).toFixed(1) + ',' + Y(p.y).toFixed(1) : Y(p.y).toFixed(1)); });
+    el('path', { d: dpath, fill: 'none', stroke: COLORS[s.id], 'stroke-width': 2, 'stroke-linejoin': 'round' });
+    const last = s.pts[s.pts.length - 1];
+    ends.push({ id: s.id, y: Y(last.y), v: last.y, x: X(last.x) });
+  }
+  ends.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 15) ends[i].y = ends[i - 1].y + 15;
+  for (const e of ends) {
+    el('circle', { cx: e.x, cy: Y(e.v), r: 4, fill: COLORS[e.id], stroke: 'var(--surface-1)', 'stroke-width': 2 });
+    const t = el('text', { x: m.l + pw + 10, y: e.y + 4, class: 'end-label' });
+    t.textContent = e.id + ' ' + (e.v < 0 ? '−$' : '$') + Math.abs(e.v).toFixed(2);
+  }
+  const cross = el('line', { y1: m.t, y2: m.t + ph, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3', visibility: 'hidden' });
+  const dots = SERIES.map((s) => el('circle', { r: 4, fill: COLORS[s.id], stroke: 'var(--surface-1)', 'stroke-width': 2, visibility: 'hidden' }));
+  const hit = el('rect', { x: m.l, y: m.t, width: pw, height: ph, fill: 'transparent' });
+  const wrap = document.getElementById('chart');
+  wrap.appendChild(svg);
+  const tip = document.getElementById('tip');
+  const fmtT = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' });
+  const at = (s, xv) => { let p = s.pts[0]; for (const q of s.pts) { if (q.x <= xv) p = q; else break; } return p; };
+  function move(ev) {
+    const r = svg.getBoundingClientRect();
+    const sx = ((ev.clientX - r.left) / r.width) * W;
+    const xv = x0 + ((Math.min(Math.max(sx, m.l), m.l + pw) - m.l) / pw) * (x1 - x0);
+    cross.setAttribute('x1', X(xv)); cross.setAttribute('x2', X(xv)); cross.setAttribute('visibility', 'visible');
+    let rows = '';
+    SERIES.forEach((s, i) => {
+      const p = at(s, xv);
+      dots[i].setAttribute('cx', X(xv)); dots[i].setAttribute('cy', Y(p.y)); dots[i].setAttribute('visibility', 'visible');
+      rows += '<div class="row"><span><span class="key k-' + s.id + '"></span>' + s.id + '</span><span>' + (p.y < 0 ? '−$' : '$') + Math.abs(p.y).toFixed(2) + '</span></div>';
+    });
+    tip.innerHTML = '<div class="t">' + fmtT.format(xv) + ' ET</div>' + rows;
+    tip.style.display = 'block';
+    const wr = wrap.getBoundingClientRect();
+    let left = ev.clientX - wr.left + 14;
+    if (left + tip.offsetWidth > wr.width) left = ev.clientX - wr.left - tip.offsetWidth - 14;
+    tip.style.left = left + 'px';
+    tip.style.top = Math.max(0, ev.clientY - wr.top - tip.offsetHeight - 10) + 'px';
+  }
+  function leave() { tip.style.display = 'none'; cross.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); }
+  hit.addEventListener('pointermove', move);
+  hit.addEventListener('pointerleave', leave);
+})();
+</script>
+</body>
+</html>
