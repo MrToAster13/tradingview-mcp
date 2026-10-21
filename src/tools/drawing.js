@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { jsonResult } from './_format.js';
 import * as core from '../core/drawing.js';
+import { drawTradesFromCsv } from '../core/paper_trades.js';
 
 export function registerDrawingTools(server) {
   server.tool('draw_shape', 'Draw a shape/line on the chart', {
@@ -35,7 +36,7 @@ export function registerDrawingTools(server) {
     export_timestamp: z.string().optional().describe('Export id YYYY-MM-DDTHH_MM_SS from the CSV file names (e.g. 2026-10-14T22_32_05). Defaults to the newest export.'),
     dry_run: z.boolean().optional().describe('Parse the export and return the planned positions without touching the chart'),
   }, async ({ export_timestamp, dry_run }) => {
-    try { return jsonResult(await core.drawTradesFromCsv({ export_timestamp, dry_run })); }
+    try { return jsonResult(await drawTradesFromCsv({ export_timestamp, dry_run })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
