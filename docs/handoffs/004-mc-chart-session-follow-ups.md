@@ -54,10 +54,11 @@ After this work, Elijah replaced the audit loop. From now on:
 - Every code change goes through the tdd-loop skill: baseline the full suite, write failing tests that map 1:1 to the ticket's acceptance criteria, make them pass in at most 10 logged iterations, run tdd-loop's Opus review, add a failing regression test for each confirmed finding and fix it, run the security stage, and commit only when every gate passes. Never edit an assertion to make a test pass.
 - The ticket's acceptance criteria are the spec. Ask Elijah only when a ticket has none.
 - Docs, comments and config text with no behavior to test run only the security stage, then commit.
-- Commit only. Elijah pushes and merges.
 - Hard stop on 10 iterations, two iterations with the same failing set, or a test that looks wrong. Leave the work uncommitted, write the reason here and wait.
 
-Pushed before the change: branch `docs/handoff-003-status` to the fork, merged as PR #5 (merge 1b926d8). That was a docs-only update to handoff 003. Nothing was pushed after the change.
+The same day, a second update replaced "commit only". Work that passes tdd-loop is committed, pushed, opened as a PR if the repo uses them, and merged once CI is green, without asking. A CI failure goes back through tdd-loop. Never force-push, never `push --all` or `--mirror`. Anything that hit a hard stop or has an open finding stays unpushed. On a Hermes host a merge still waits for Elijah's yes. This branch is still never pushed, because it is built on `backtest/mc-basic-1m`.
+
+Pushed before the first change: branch `docs/handoff-003-status` to the fork, merged as PR #5 (merge 1b926d8). That was a docs-only update to handoff 003. Nothing has been pushed since.
 
 ## Next
 
