@@ -1,9 +1,9 @@
-# Handoff 002: tv_up no-kill fix merged, six open questions
+# Handoff 002: tv_up no-kill fix and audit follow-ups, five open questions
 
-Status: in-progress (fixing the audit follow-ups on fix/bool-params-and-kill-scope; the open questions still wait on Elijah)
+Status: blocked (the follow-up fixes passed audit and are being pushed; the open questions wait on Elijah)
 
 ## Goal
-Elijah asked to work every ticket and task that could be done without him, using subagents, and to commit the uncommitted work. The pieces were Caddy after reboot, whether Tailscale Funnel is on, why the 10-19 and 10-20 forward check-ins produced nothing, and landing the feat/draw-trades-from-csv work. Usage limits are close, so run at most one subagent at a time, Haiku unless the step needs Opus.
+Elijah asked to work every ticket and task that could be done without him, using subagents, and to commit the uncommitted work. The pieces were Caddy after reboot, whether Tailscale Funnel is on, why the 10-19 and 10-20 forward check-ins produced nothing, and landing the feat/draw-trades-from-csv work. Elijah lifted the one-subagent cap on resume, so normal CLAUDE.md subagent use applies.
 
 ## Done
 - PR https://github.com/MrToAster13/tradingview-mcp/pull/1 merged into the fork's main as 8ee5660 and linked to the thread. The fix commit d19ed29 is on feat/draw-trades-from-csv. It contains:
@@ -16,19 +16,16 @@ Elijah asked to work every ticket and task that could be done without him, using
 - Funnel is on. `/mcp` returns 401 without the key. `/health` returns 200 "ok" with no auth.
 - The check-ins never ran because they were in-session timers in a session that ended. A manual rerun failed with "tab 1 (CME_MINI:MES1! 15m) not found" because the layout reopened on CBOT:ZC1! 15m. I didn't change the live chart.
 
-## In flight
-Elijah said resume, and the audit and fix rule says to pick the safest option, so I'm fixing the question 6 follow-ups myself. Each fix makes the code refuse more. The work is on branch `fix/bool-params-and-kill-scope`, off fork/main 8ee5660, in worktree `../tvmcp-fix`. `node_modules` there is a junction to the main checkout's copy. Delete it with `.Delete()` before `git worktree remove`.
-- Haiku A: a shared strict boolean param that rejects anything other than true, false, "true", "false", "1" and "0", replacing all 8 `z.coerce.boolean()` uses in `src/tools/` (alerts, data x4, health, indicators, ui). With coercion, `delete_all: "false"` deletes every alert.
-- Haiku B: `src/core/trades.js` skips a stop or target that isn't positive. A Filled row with a blank or invalid quantity skips every entry on that symbol, because the exit replay would be wrong.
-- Opus: when `kill_existing` is false, the `src/core/health.js` MSIX fallback kills only the child it spawned, by PID, never by image name.
-
-Commit bcaec23 holds all three fixes. `npm run test:unit` passes 291 of 291 tests and exits 1 only because of the known sanitization `C:\C:\` bug. `tests/bool_params.test.js` was added to `test:unit` and `test:all`.
-Known gap, documented and not fixed: if Elijah opens TradingView during the CDP wait and Electron's single-instance lock hands that window to our spawned process, the PID kill closes his window.
+- The audit follow-ups are fixed on branch `fix/bool-params-and-kill-scope` (off fork/main 8ee5660) in commit bcaec23. I picked the fixes myself under the audit and fix rule, and each one makes the code refuse more.
+  - `src/tools/_params.js` has a strict `bool` schema that replaced all 8 `z.coerce.boolean()` params. Coercion turned "false" into true, so `delete_all: "false"` deleted every alert.
+  - When `kill_existing` is false, the `src/core/health.js` MSIX fallback kills only the child it spawned, by PID. It refuses when the PID is unknown.
+  - `src/core/trades.js` skips a stop or target that isn't positive. It also skips every entry on a symbol whose order history has an unreadable Filled quantity.
+  - `npm run test:unit` passes 291 of 291 tests and exits 1 only because of the known sanitization `C:\C:\` bug. `tests/bool_params.test.js` was added to `test:unit` and `test:all`.
+  - The Opus audit of the branch was clean, apart from minor doc errors that are now fixed.
 
 ## Next (in order)
-1. Opus audit of `fork/main..fix/bool-params-and-kill-scope`, including the handoff commits. Fix and re-audit until it comes back clean.
-2. Push to `fork`, open a PR, link it, merge, and remove the worktree.
-3. Then stop and wait on the open questions below.
+1. Push `fix/bool-params-and-kill-scope` to `fork`, open the PR, link it, merge, then remove worktree `../tvmcp-fix`. Its `node_modules` is a junction to the main checkout's copy, so delete it with `.Delete()` before `git worktree remove`.
+2. Then wait on the open questions below.
 
 ## Open questions for Elijah
 1. package-lock.json drift with no package.json change: (a) discard or (b) commit.
@@ -36,7 +33,6 @@ Known gap, documented and not fixed: if Elijah opens TradingView during the CDP 
 3. Funnel: (a) keep it on and put `/health` behind the key, (b) keep it on as is, or (c) go tailnet-only, which breaks Hermes until Hermes moves to the tailnet.
 4. Forward check-ins: (a) switch the chart to MES1! 15m (or allow me to), run now, and schedule twice a day with T3 `schedule_task`, (b) run once, or (c) drop the forward test.
 5. backtest/mc-basic-1m: (a) keep it local, (b) move the home path and layout id into env vars, regenerate the reports at the $1 fee, re-audit and push, or (c) push it to a private repo.
-6. Follow-ups: being fixed now (see In flight). The rest stay documented: the launch_tv_debug scripts kill unconditionally, and nobody has verified Level ID in exports.
 
 ## Key decisions
 - Never push backtest/mc-basic-1m to the public fork as it stands, because commit 6aa97f4 says "do not push". `scripts/mc_basic_1m/store.mjs:11` has a home path, and `cdp.mjs:14-15`, `templates.mjs:21` and `lint.test.mjs` have the layout id.
