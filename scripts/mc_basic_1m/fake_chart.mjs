@@ -8,7 +8,8 @@
  * name or non-object args is E_ARGS. The write template runs on tab1 only. discover takes a
  * chart path other than tab 1. Every template then goes through prepareValues with the tab's
  * guard path and resolution, and fillPlaceholders, as cdp.mjs does, so bad args fail here too.
- * Nothing is evaluated. The reply comes from the test.
+ * The filled text is kept on the call record as expression. Nothing is evaluated. The reply
+ * comes from the test.
  *
  * Replies are keyed "name tab" (for example "read_history tab2") or by name alone. A reply is a
  * constant or a function of (args, tab, n), where n counts the earlier calls with that name and
@@ -90,7 +91,8 @@ export function fakeChart({ replies = {}, now = 0, advanceClock = true, afterSle
   }
 
   async function run(name, args, tab) {
-    fake.calls.push({ name, args: isPlainObject(args) ? structuredClone(args) : args, tab });
+    const entry = { name, args: isPlainObject(args) ? structuredClone(args) : args, tab };
+    fake.calls.push(entry);
     if (name === 'close') {
       if (tab !== 'all' || !isPlainObject(args) || Object.keys(args).length !== 0) {
         throw coded('E_ARGS', 'close takes tab "all" and empty args');
@@ -100,7 +102,7 @@ export function fakeChart({ replies = {}, now = 0, advanceClock = true, afterSle
     if (typeof name !== 'string' || !Object.hasOwn(TEMPLATES, name)) throw coded('E_ARGS', 'unknown template name');
     if (!isPlainObject(args)) throw coded('E_ARGS', 'args must be a plain object');
     const ctx = contextFor(name, tab);
-    fillPlaceholders(name, TEMPLATES[name], prepareValues(name, args, ctx));
+    entry.expression = fillPlaceholders(name, TEMPLATES[name], prepareValues(name, args, ctx));
     const value = reply(name, args, tab);
     if (!isGuardRefusal(value)) return value;
     const identity = Object.hasOwn(replies, `identity ${tab}`) || Object.hasOwn(replies, 'identity')

@@ -8,7 +8,7 @@ const TEMPLATE_SHA256 = Object.freeze({
   discover: '448f6696043b064a8994025dca4a9967f46bd05e71e7c4c88bfbe4ee7ee76f5c',
   read_history: 'eb4db61119f1c060308731e5fbc2541fa50a102eff16c55af7c48728f6a7d19a',
   read_shapes: '06958f0e95bf24346ab1e277ac5dd9f9ffc43bc579f22a976d5af834a973cf67',
-  draw_trade: '632564e3dad4026052070ce162420f3adcbc92ad0c22627d1e9103f4e171c409',
+  draw_trade: '17c7d2d69aa58aacda8ce830cd18d688f58fc72a406df6ea20820f695d08cdf5',
 });
 
 const TAB1_ID = 'HCCCDVCt';

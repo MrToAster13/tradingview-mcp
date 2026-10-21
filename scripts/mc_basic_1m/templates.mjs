@@ -31,7 +31,7 @@ const DRAW_BODY = [
   'const ids = [];',
   'for (const s of all) { ids.push(s.id); }',
   GUARD_STEP,
-  'const txt = chart.createShape({ time: TEXT_TIME, price: TEXT_PRICE }, { shape: "text", text: TEXT });',
+  'const txt = chart.createShape({ time: @@TEXT_TIME@@, price: @@TEXT_PRICE@@ }, { shape: "text", text: @@TEXT@@ });',
   'const fresh = chart.getAllShapes();',
   'const rows = [];',
   'for (const s of fresh) { if (!ids.includes(s.id)) { rows.push(s); } }',
@@ -46,14 +46,14 @@ const DRAW_BODY = [
   'if (!st || st.name !== "text") { return "E_TEXT_ID"; }',
   'const pts = st.getPoints();',
   'const p = st.getProperties();',
-  'if (pts.length !== 1 || pts[0].time !== TEXT_TIME || pts[0].price !== TEXT_PRICE || p.text !== TEXT) { return "E_TEXT_ID"; }',
+  'if (pts.length !== 1 || pts[0].time !== @@TEXT_TIME@@ || pts[0].price !== @@TEXT_PRICE@@ || p.text !== @@TEXT@@) { return "E_TEXT_ID"; }',
   'const x = chart.getAllShapes();',
   'const b = [];',
   'for (const s of x) { b.push(s.id); }',
   'const out = [];',
   'try {',
   GUARD_STEP,
-  'const r = chart.createMultipointShape([{ time: P1_TIME, price: P1_PRICE }, { time: P2_TIME, price: P2_PRICE }], { shape: IS_LONG ? "long_position" : "short_position", overrides: { stopLevel: STOP_LEVEL, profitLevel: PROFIT_LEVEL, linecolor: COLOUR } });',
+  'const r = chart.createMultipointShape([{ time: @@ENTRY_TIME@@, price: @@ENTRY_PRICE@@ }, { time: @@END_TIME@@, price: @@END_PRICE@@ }], { shape: @@IS_LONG@@ ? "long_position" : "short_position", overrides: { stopLevel: @@STOP_LEVEL@@, profitLevel: @@PROFIT_LEVEL@@, linecolor: @@COLOUR@@ } });',
   'out.push(r);',
   '} catch (e) {',
   'await new Promise(resolve => setTimeout(resolve, 5000));',
@@ -62,7 +62,7 @@ const DRAW_BODY = [
   'if (a.length === 0) { return ["E_POS_THROW", sid, null]; }',
   'if (a.length !== 1) { return ["E_POS_ID", sid, null]; }',
   'const st = chart.getShapeById(a[0].id);',
-  'if (!st || st.name !== (IS_LONG ? "long_position" : "short_position")) { return ["E_POS_ID", sid, null]; }',
+  'if (!st || st.name !== (@@IS_LONG@@ ? "long_position" : "short_position")) { return ["E_POS_ID", sid, null]; }',
   'out.push(a[0].id);',
   '}',
   'try {',
@@ -75,7 +75,7 @@ const DRAW_BODY = [
   'const st = chart.getShapeById(i);',
   'if (!st) { return ["E_POS_ID", sid, null]; }',
   'const pts = st.getPoints();',
-  'if (st.name !== (IS_LONG ? "long_position" : "short_position") || pts[0].time !== P1_TIME || pts[0].price !== P1_PRICE) { return ["E_POS_ID", sid, i]; }',
+  'if (st.name !== (@@IS_LONG@@ ? "long_position" : "short_position") || pts[0].time !== @@ENTRY_TIME@@ || pts[0].price !== @@ENTRY_PRICE@@) { return ["E_POS_ID", sid, i]; }',
   '{',
   GUARD_STEP_RETURNING_IDS,
   'const st = chart.getShapeById(i);',
@@ -86,7 +86,7 @@ const DRAW_BODY = [
   'if (!x) { return ["E_NOSHAPE", sid, i]; }',
   'const fresh = x.getPoints();',
   'const rows = x.getProperties();',
-  'if (st.name !== (IS_LONG ? "long_position" : "short_position") || pts.length !== 2 || pts[0].time !== P1_TIME || pts[0].price !== P1_PRICE || pts[1].time !== P2_TIME || pts[1].price !== P2_PRICE || p.stopLevel !== STOP_LEVEL || p.profitLevel !== PROFIT_LEVEL || x.name !== "text" || fresh.length !== 1 || fresh[0].time !== TEXT_TIME || fresh[0].price !== TEXT_PRICE || rows.text !== TEXT) { return ["E_SHAPE_MISMATCH", sid, i]; }',
+  'if (st.name !== (@@IS_LONG@@ ? "long_position" : "short_position") || pts.length !== 2 || pts[0].time !== @@ENTRY_TIME@@ || pts[0].price !== @@ENTRY_PRICE@@ || pts[1].time !== @@END_TIME@@ || pts[1].price !== @@END_PRICE@@ || p.stopLevel !== @@STOP_LEVEL@@ || p.profitLevel !== @@PROFIT_LEVEL@@ || x.name !== "text" || fresh.length !== 1 || fresh[0].time !== @@TEXT_TIME@@ || fresh[0].price !== @@TEXT_PRICE@@ || rows.text !== @@TEXT@@) { return ["E_SHAPE_MISMATCH", sid, i]; }',
   'return { id: i, text: sid, linecolor: p.linecolor };',
   '}',
   '} catch (e) { return ["E_POS_ID", sid, null]; }',
@@ -150,7 +150,7 @@ const PLACEHOLDERS = Object.freeze({
   read_shapes: READ_PLACEHOLDERS,
   draw_trade: Object.freeze([
     'DEADLINE', 'TEXT', 'TEXT_TIME', 'TEXT_PRICE', 'IS_LONG', 'COLOUR',
-    'P1_TIME', 'P1_PRICE', 'P2_TIME', 'P2_PRICE', 'STOP_LEVEL', 'PROFIT_LEVEL',
+    'ENTRY_TIME', 'ENTRY_PRICE', 'END_TIME', 'END_PRICE', 'STOP_LEVEL', 'PROFIT_LEVEL',
   ]),
 });
 
@@ -284,10 +284,10 @@ export function prepareValues(name, callerArgs, ctx) {
     COLOUR: RUN_COLOURS[a.RUN_ID],
     DEADLINE: a.DEADLINE,
     IS_LONG: a.IS_LONG,
-    P1_TIME: a.P1_TIME,
-    P1_PRICE: a.P1_PRICE,
-    P2_TIME: a.P2_TIME,
-    P2_PRICE: a.P2_PRICE,
+    ENTRY_TIME: a.P1_TIME,
+    ENTRY_PRICE: a.P1_PRICE,
+    END_TIME: a.P2_TIME,
+    END_PRICE: a.P2_PRICE,
     TEXT_TIME: a.TEXT_TIME,
     TEXT_PRICE: a.TEXT_PRICE,
     STOP_LEVEL: a.STOP_LEVEL,
@@ -299,12 +299,19 @@ export function fillTemplate(text, names, values) {
   if (typeof text !== 'string') {
     throw fail('E_ARGS', 'template must be a string');
   }
+  // Design line 127: refuse values whose keys differ from the placeholder list.
+  const keys = typeof values === 'object' && values !== null ? Object.keys(values) : null;
+  if (keys === null || keys.length !== names.length || names.some((k) => !keys.includes(k))) {
+    throw fail('E_ARGS', 'value keys do not match the placeholder list');
+  }
   const re = /@@([A-Z_]+)@@/g;
+  const seen = [];
   let out = '';
   let last = 0;
   let m = re.exec(text);
   while (m !== null) {
     const name = m[1];
+    if (!seen.includes(name)) seen.push(name);
     if (!names.includes(name)) {
       throw fail('E_ARGS', 'token ' + name + ' is not a placeholder of this template');
     }
@@ -316,6 +323,10 @@ export function fillTemplate(text, names, values) {
     m = re.exec(text);
   }
   out += text.slice(last);
+  // api_v1: the list holds the tokens in the text, so a listed name the text lacks is refused.
+  if (seen.length !== names.length) {
+    throw fail('E_ARGS', 'a listed placeholder is missing from the template text');
+  }
   if (out.includes('@@')) {
     throw fail('E_ARGS', 'filled template still contains @@');
   }

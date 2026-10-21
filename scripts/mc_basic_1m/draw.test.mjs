@@ -11,8 +11,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as store from './store.mjs';
 import { FORMAT, sha256Rows, simulate } from './sim.mjs';
-import { RUN_COLOURS } from './templates.mjs';
-import { main, tradeListSha } from './draw.mjs';
+import { RUN_COLOURS, TEMPLATES, PLACEHOLDERS, CALLER_KEYS, prepareValues, fillTemplate, fillPlaceholders, buildLabel } from './templates.mjs';
+import { main, tradeListSha, tradePlan, arithmeticOk } from './draw.mjs';
 import { fakeChart, chartError } from './fake_chart.mjs';
 
 const T0 = Date.UTC(2026, 9, 14, 9, 0, 0) / 1000;
@@ -285,5 +285,124 @@ describe('draw on a fresh state', () => {
     assert.equal(await main(['--expect-guard', digest, '--approve', APPROVE, '--ack-unverified', '--chart-empty-ok'], second), 1);
     assert.equal(second.calls.length, 0);
     assert.ok(second.stderr.some((l) => l.includes('is pending; resolve settles it first')));
+  });
+});
+
+/* ---------- placeholder fills (design line 127; api_v1 PLACEHOLDERS, prepareValues and fillTemplate) ---------- */
+
+const TAB1_CTX = { guardPath: '/chart/HCCCDVCt/', expectedRes: '1' };
+const TAB2_CTX = { guardPath: '/chart/FAKETAB2/', expectedRes: '15' };
+// Placeholder names and caller keys: none may be left in a filled text as a bare word.
+const ALL_PLACEHOLDERS = [...new Set([...Object.values(PLACEHOLDERS).flat(), ...Object.values(CALLER_KEYS).flat()])];
+const tokensOf = (text) => [...new Set([...text.matchAll(/@@([A-Z_]+)@@/g)].map((m) => m[1]))].sort();
+const stripStrings = (text) => text.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+
+/** The draw_trade args, key for key as draw.mjs builds them from a trade plan. */
+const drawArgs = (runId, unverified, plan, deadline) => ({
+  RUN_ID: runId,
+  UNVERIFIED: unverified,
+  DEADLINE: deadline,
+  IS_LONG: plan.long,
+  P1_TIME: plan.p1.time,
+  P1_PRICE: plan.p1.price,
+  P2_TIME: plan.p2.time,
+  P2_PRICE: plan.p2.price,
+  TEXT_TIME: plan.textTime,
+  TEXT_PRICE: plan.textPrice,
+  STOP_LEVEL: plan.stopLevel,
+  PROFIT_LEVEL: plan.profitLevel,
+});
+
+/** No @@ left, no placeholder name left as a bare word outside a string, and equal to a split-and-join fill of the template. */
+function assertFilled(name, expression, values) {
+  assert.equal(typeof expression, 'string', `${name} has no filled expression`);
+  assert.equal(expression.includes('@@'), false, `${name} still contains @@`);
+  const code = stripStrings(expression);
+  for (const k of ALL_PLACEHOLDERS) {
+    assert.equal(new RegExp(`\\b${k}\\b`).test(code), false, `${name}: ${k} is a bare name, not a placeholder`);
+  }
+  let expected = TEMPLATES[name];
+  for (const k of PLACEHOLDERS[name]) expected = expected.split(`@@${k}@@`).join(JSON.stringify(values[k]));
+  assert.equal(expression, expected, `${name} is not the template with every placeholder filled`);
+}
+
+/** The two shapes and the deadline carry the caller's values, the built label and the run colour. */
+function assertDrawValues(expression, a) {
+  const label = JSON.stringify(buildLabel(a.RUN_ID, a.UNVERIFIED));
+  const colour = JSON.stringify(RUN_COLOURS[a.RUN_ID]);
+  assert.ok(expression.includes(`chart.createShape({ time: ${a.TEXT_TIME}, price: ${a.TEXT_PRICE} }, { shape: "text", text: ${label} })`), 'text shape values');
+  assert.ok(expression.includes(
+    `chart.createMultipointShape([{ time: ${a.P1_TIME}, price: ${a.P1_PRICE} }, { time: ${a.P2_TIME}, price: ${a.P2_PRICE} }], `
+    + `{ shape: ${a.IS_LONG} ? "long_position" : "short_position", overrides: { stopLevel: ${a.STOP_LEVEL}, profitLevel: ${a.PROFIT_LEVEL}, linecolor: ${colour} } })`,
+  ), 'position shape values');
+  assert.ok(expression.includes(`Date.now() < ${a.DEADLINE}`), 'deadline value');
+}
+
+describe('template placeholders are filled', () => {
+  it('each placeholder list equals the set of @@NAME@@ tokens in its template', () => {
+    for (const name of Object.keys(TEMPLATES)) {
+      assert.deepEqual(tokensOf(TEMPLATES[name]), [...PLACEHOLDERS[name]].sort(), `${name} placeholder list and tokens differ`);
+    }
+  });
+
+  it('main sends fully filled read and draw_trade text to the fake chart', async () => {
+    shownState();
+    const deps = chart(drawnReply());
+    assert.equal(await main(FIRST_DRAW, deps), 0, deps.stderr.join('\n'));
+    assert.equal(deps.calls.length, 5);
+    for (const c of deps.calls) {
+      const values = prepareValues(c.name, c.args, c.tab === 'tab2' ? TAB2_CTX : TAB1_CTX);
+      assertFilled(c.name, c.expression, values);
+    }
+    const draw = deps.calls.find((c) => c.name === WRITE);
+    assertDrawValues(draw.expression, draw.args);
+    const tab2 = deps.calls.find((c) => c.tab === 'tab2');
+    assert.ok(tab2.expression.includes('startsWith("/chart/FAKETAB2/")') && tab2.expression.includes('chart.resolution() !== "15"'));
+  });
+
+  it('every draw_trade argument shape draw.mjs builds fills the template', () => {
+    const long = TRADES[0];
+    const short = { ...long, side: 'short', sQ: long.eQ + long.dQ, tQ: long.eQ - (long.tQ - long.eQ), exitTime: null };
+    const labels = new Set();
+    let shapes = 0;
+    for (const trade of [long, short]) {
+      const plan = tradePlan(trade, SIM.info);
+      assert.ok(plan.drawable && arithmeticOk(trade, plan), `${trade.side} trade is not drawable`);
+      for (const runId of Object.keys(RUN_COLOURS)) {
+        for (const unverified of [true, false]) {
+          const args = drawArgs(runId, unverified, plan, NOW_MS + 32000);
+          assert.deepEqual(Object.keys(args).sort(), [...CALLER_KEYS[WRITE]].sort());
+          const values = prepareValues(WRITE, args, TAB1_CTX);
+          const expression = fillPlaceholders(WRITE, TEMPLATES[WRITE], values);
+          assertFilled(WRITE, expression, values);
+          assertDrawValues(expression, args);
+          labels.add(values.TEXT);
+          shapes += 1;
+        }
+      }
+    }
+    assert.equal(shapes, 12);
+    assert.equal(labels.size, 6);
+  });
+
+  it('every read template fills on tab 1, tab 2 and a discovery path', () => {
+    const cases = [
+      ['identity', TAB1_CTX], ['identity', TAB2_CTX], ['read_history', TAB1_CTX], ['read_history', TAB2_CTX],
+      ['read_shapes', TAB1_CTX], ['read_shapes', TAB2_CTX], ['discover', { guardPath: '/chart/Cand1/', expectedRes: '15' }],
+    ];
+    for (const [name, ctx] of cases) {
+      const values = prepareValues(name, {}, ctx);
+      const expression = fillPlaceholders(name, TEMPLATES[name], values);
+      assertFilled(name, expression, values);
+      assert.ok(expression.includes(`startsWith(${JSON.stringify(ctx.guardPath)})`), `${name} guard path`);
+    }
+  });
+
+  it('fillTemplate refuses a listed name the text lacks and value keys that differ from the list', () => {
+    assert.equal(fillTemplate('f(@@A@@, @@A@@)', ['A'], { A: 'x' }), 'f("x", "x")');
+    assert.throws(() => fillTemplate('f(@@A@@)', ['A', 'B'], { A: 1, B: 2 }), { code: 'E_ARGS' });
+    assert.throws(() => fillTemplate('f(@@A@@)', ['A'], { A: 1, B: 2 }), { code: 'E_ARGS' });
+    assert.throws(() => fillTemplate('f(@@A@@)', ['A'], {}), { code: 'E_ARGS' });
+    assert.throws(() => fillTemplate('f(@@C@@)', ['A'], { A: 1 }), { code: 'E_ARGS' });
   });
 });
