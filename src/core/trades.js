@@ -156,7 +156,8 @@ function num(v) {
  * 'missing or invalid bracket price' (stop or target not positive); 'invalid
  * quantity in order history' (its symbol has a Filled row whose Quantity is
  * not positive, which would misplace that symbol's exits); 'missing or invalid
- * fill price'; 'missing or invalid quantity'.
+ * fill price'; 'missing or invalid quantity'; 'bracket on wrong side of fill'
+ * (a long needs stop < fill < target, a short target < fill < stop).
  */
 export function buildFills({ orders, balances, exportTime, netAtExport }) {
   // CSV is newest first; a higher row index is earlier in the export.
@@ -291,11 +292,18 @@ export function buildFills({ orders, balances, exportTime, netAtExport }) {
       skipped.push({ order_id: o['Order ID'], reason: 'missing or invalid quantity' });
       continue;
     }
+    // planPosition takes distances, so a stop or target on the wrong side of
+    // the fill would be drawn as a mirrored bracket.
+    const long = o['Side'] === 'Buy';
+    if (long ? !(stop < entryPrice && entryPrice < target) : !(target < entryPrice && entryPrice < stop)) {
+      skipped.push({ order_id: o['Order ID'], reason: 'bracket on wrong side of fill' });
+      continue;
+    }
     const exit = exitByIdx.get(r.idx);
     fills.push({
       order_id: o['Order ID'],
       symbol: o['Symbol'],
-      side: o['Side'] === 'Buy' ? 'long' : 'short',
+      side: long ? 'long' : 'short',
       qty,
       entry_price: entryPrice,
       entry_time: t,

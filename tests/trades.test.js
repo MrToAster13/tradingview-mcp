@@ -435,6 +435,47 @@ describe('buildFills()', () => {
     }
   });
 
+  it('skips an entry whose stop or target is on the wrong side of the fill', () => {
+    // [entry side, bracket side, stop, target], fill at 5000
+    const cases = [
+      ['Buy', 'Sell', '5010.00', '5020.00'], // long, stop above fill
+      ['Buy', 'Sell', '4990.00', '4980.00'], // long, target below fill
+      ['Buy', 'Sell', '5000.00', '5020.00'], // long, stop at fill
+      ['Buy', 'Sell', '4990.00', '5000.00'], // long, target at fill
+      ['Sell', 'Buy', '4990.00', '4980.00'], // short, stop below fill
+      ['Sell', 'Buy', '5010.00', '5020.00'], // short, target above fill
+      ['Sell', 'Buy', '5000.00', '4980.00'], // short, stop at fill
+    ];
+    for (const [side, bside, stop, target] of cases) {
+      const { fills, skipped } = buildFills({
+        orders: orders(
+          `CME_MINI:MES1!,${bside},Limit,1,${target},,,Cancelled,,2026-03-05 22:00:00,2026-03-05 22:20:00,15003,,,`,
+          `CME_MINI:MES1!,${bside},Stop,1,,${stop},,Cancelled,,2026-03-05 22:00:00,2026-03-05 22:20:00,15002,,,`,
+          `CME_MINI:MES1!,${side},Market,1,,,5000.00,Filled,,2026-03-05 22:00:00,2026-03-05 22:00:00,15001,,20x,"500.00 USD"`,
+        ),
+        balances: PV,
+        exportTime: EXPORT,
+      });
+      const label = `${side} stop ${stop} target ${target}`;
+      assert.deepEqual(fills, [], label);
+      assert.deepEqual(skipped, [{ order_id: '15001', reason: 'bracket on wrong side of fill' }], label);
+    }
+  });
+
+  it('keeps a short whose stop is above and target below the fill', () => {
+    const { fills, skipped } = buildFills({
+      orders: orders(
+        'CME_MINI:MES1!,Buy,Limit,1,4980.00,,,Cancelled,,2026-03-05 22:00:00,2026-03-05 22:20:00,15103,,,',
+        'CME_MINI:MES1!,Buy,Stop,1,,5010.00,,Cancelled,,2026-03-05 22:00:00,2026-03-05 22:20:00,15102,,,',
+        'CME_MINI:MES1!,Sell,Market,1,,,5000.00,Filled,,2026-03-05 22:00:00,2026-03-05 22:00:00,15101,,20x,"500.00 USD"',
+      ),
+      balances: PV,
+      exportTime: EXPORT,
+    });
+    assert.deepEqual(skipped, []);
+    assert.deepEqual(fills.map(f => [f.order_id, f.side, f.stop, f.target]), [['15101', 'short', 5010, 4980]]);
+  });
+
   it('skips every entry on a symbol with a Filled row that has no quantity, and no other symbol', () => {
     for (const qty of ['', '  ', '0', '-1']) {
       const { fills, skipped } = buildFills({
