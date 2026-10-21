@@ -16,7 +16,9 @@ Every command reaches the chart only through `deps.run(templateName, args, tab)`
 
 - cdp.mjs owns the real run. Its template pins now hold the SHA-256 of each template, and templates_hash.test.mjs checks them by reading cdp.mjs as text.
 - cli.mjs is the only file that imports both cdp.mjs and the command mains. It builds deps, calls the command's main with the flags after the command name, sets process.exitCode and closes the chart session in a finally block. It holds no command logic.
-- fake_chart.mjs is the one in-memory adapter for tests. Its run makes the same front-door checks as cdp.mjs (close on tab "all", known template name, plain-object args, draw_trade on tab1 only, discover on a chart path) and fills the template through prepareValues and fillTemplate. It evaluates nothing; each test supplies the reply.
+- fake_chart.mjs is the one in-memory adapter for tests. Its run makes the same front-door checks as cdp.mjs (close on tab "all", known template name, plain-object args, draw_trade on tab1 only, discover on a chart path) and fills the template through prepareValues and fillPlaceholders. It evaluates nothing; each test supplies the reply.
+- templates.mjs exports fillPlaceholders(name, text, values), which looks up the placeholder list and fills the text. cdp.mjs calls it, so the only computed lookups left in cdp.mjs are the template and the hash, as design_v14 line 137 allows.
+- lint.test.mjs imports the template and guard strings from templates.mjs and lints those. templates.mjs builds them with join, so the old scan for backtick strings found nothing and every template lint passed without checking anything.
 - The snapshot, resolve, clear and recorder tests now use the shared fake, and draw.test.mjs tests the draw command through its main.
 - package.json gets a test:mc script that runs every test in the folder. This overrides design_v14 line 200, which says this work does not edit package.json; the task asked for the script.
 

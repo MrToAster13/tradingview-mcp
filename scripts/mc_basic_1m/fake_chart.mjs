@@ -7,7 +7,7 @@
  * same front-door checks before any reply. close takes tab "all" and empty args. An unknown
  * name or non-object args is E_ARGS. The write template runs on tab1 only. discover takes a
  * chart path other than tab 1. Every template then goes through prepareValues with the tab's
- * guard path and resolution, and fillTemplate, as cdp.mjs does, so bad args fail here too.
+ * guard path and resolution, and fillPlaceholders, as cdp.mjs does, so bad args fail here too.
  * Nothing is evaluated. The reply comes from the test.
  *
  * Replies are keyed "name tab" (for example "read_history tab2") or by name alone. A reply is a
@@ -15,7 +15,7 @@
  * tab. A reply that is an Error is thrown. Results are deep copies, so a command never changes
  * a fixture. An "E_GUARD" refusal comes back as { value, identity }, as cdp.mjs returns it.
  */
-import { TEMPLATES, PLACEHOLDERS, prepareValues, fillTemplate } from './templates.mjs';
+import { TEMPLATES, prepareValues, fillPlaceholders } from './templates.mjs';
 
 const TAB1_PATH = '/chart/HCCCDVCt/';
 const PATH_RE = /^\/chart\/[A-Za-z0-9]+\/$/;
@@ -100,7 +100,7 @@ export function fakeChart({ replies = {}, now = 0, advanceClock = true, afterSle
     if (typeof name !== 'string' || !Object.hasOwn(TEMPLATES, name)) throw coded('E_ARGS', 'unknown template name');
     if (!isPlainObject(args)) throw coded('E_ARGS', 'args must be a plain object');
     const ctx = contextFor(name, tab);
-    fillTemplate(TEMPLATES[name], PLACEHOLDERS[name], prepareValues(name, args, ctx));
+    fillPlaceholders(name, TEMPLATES[name], prepareValues(name, args, ctx));
     const value = reply(name, args, tab);
     if (!isGuardRefusal(value)) return value;
     const identity = Object.hasOwn(replies, `identity ${tab}`) || Object.hasOwn(replies, 'identity')

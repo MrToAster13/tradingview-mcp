@@ -192,13 +192,16 @@ function idOk(x) {
 
 /* ---------- the run under the lock ---------- */
 
+// The class has no special set-up method because its name is a banned word in this folder (design line 125).
+// init sets the fields and returns the instance.
 class DrawRun {
-  constructor(opts, deps, st) {
+  init(opts, deps, st) {
     this.opts = opts;
     this.deps = deps;
     this.log = st.log;
     this.guard = st.guard;
     this.fresh = st.kind === 'fresh';
+    return this;
   }
 
   saveLog(log) {
@@ -469,7 +472,7 @@ async function drawLocked(opts, deps) {
   if (st.kind !== 'fresh' && st.logRead.state === 'missing' && !st.logBak) {
     throw refuse('the log and log.bak are both missing while guard.json exists; no record is known and broker-reset is the exit (design line 158)');
   }
-  const ctx = new DrawRun(opts, deps, st);
+  const ctx = new DrawRun().init(opts, deps, st);
   const records = isObj(ctx.log) && isObj(ctx.log.records) ? Object.values(ctx.log.records).filter(isObj) : [];
   const pending = records.find((r) => r.state === 'pending');
   if (pending) throw refuse(`record ${pending.key} is pending; resolve settles it first (design line 160)`);

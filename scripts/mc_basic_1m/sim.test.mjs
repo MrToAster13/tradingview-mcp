@@ -127,7 +127,7 @@ function q15(m, k) {
   return best;
 }
 
-function run(m, runId = 'HTF-a') {
+function simRun(m, runId = 'HTF-a') {
   const res = simulate(toSnapshot(m));
   for (const r of res.runs) {
     for (const s of [r.whole, r.first, r.second]) {
@@ -187,7 +187,7 @@ describe('triggers', () => {
     const { m, d } = canonicalLong();
     // 1m Blue Wave (-65 from 0), Mny Flow and Sto RSI all fall on the trigger row.
     m.m1.mf[d] = -1; m.m1.sto[d] = -1;
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.triggers.length, 1);
     assert.equal(r.triggers[0].outcome, 'trade');
     assert.deepEqual(r.triggers[0].attempts.map((a) => [a.row, a.pass]), [[d, true]]);
@@ -215,7 +215,7 @@ describe('triggers', () => {
 
   it('a short trigger fills at the next open less a tick, setup from the trigger bar high', () => {
     const { m, d } = canonicalShort();
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.trades.length, 1);
     const t = r.trades[0];
     assert.equal(t.side, 'short');
@@ -235,7 +235,7 @@ describe('triggers', () => {
       const { m, d } = canonicalShort();
       m.m1.bw[d] = bw;
       m.m1.cross[d] = cross;
-      const { res } = run(m);
+      const { res } = simRun(m);
       return res.runs.map((x) => [x.triggers.length, x.trades.length]);
     };
     const all = (n) => RUN_IDS.map(() => [n, n]);
@@ -251,14 +251,14 @@ describe('triggers', () => {
     for (const [v, want] of [[1, 1], [-3, 1], [0, 0], [null, 0]]) {
       const { m, d } = canonicalLong();
       m.m1.buy[d] = v;
-      assert.equal(run(m).r.triggers.length, want, `buy ${v}`);
+      assert.equal(simRun(m).r.triggers.length, want, `buy ${v}`);
     }
   });
 
   it('a Buy with Blue Wave > -60 still triggers a long (no Blue Wave rule on longs)', () => {
     const { m, d } = canonicalLong();
     m.m1.bw[d] = 10;
-    assert.equal(run(m).r.trades.length, 1);
+    assert.equal(simRun(m).r.trades.length, 1);
   });
 
   it('the setup uses only the trigger bar: lower lows before it and on later bars are ignored', () => {
@@ -266,7 +266,7 @@ describe('triggers', () => {
     setBar(m, d - 1, 5000, 5000, 4990, 5000);
     setBar(m, d - 4, 5000, 5000, 4980, 5000);
     setBar(m, d + 2, 5000, 5000, 4997, 5000); // above S 4995.75, so no exit
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.setupQ, Q(4996));
     assert.equal(t.dQ, Q(5.5));
     assert.equal(t.open, true);
@@ -274,7 +274,7 @@ describe('triggers', () => {
     const s = canonicalShort();
     setBar(s.m, s.d - 1, 5000, 5010, 5000, 5000);
     setBar(s.m, s.d + 2, 5000, 5003, 5000, 5000); // below S 5004.25
-    const ts = run(s.m).r.trades[0];
+    const ts = simRun(s.m).r.trades[0];
     assert.equal(ts.setupQ, Q(5004));
     assert.equal(ts.dQ, Q(4.5));
   });
@@ -289,7 +289,7 @@ describe('entry on the trigger row', () => {
     assert.equal(m.m15.t[j], at(10, 0)); // 10:20 reads the 10:00 row
     // 10:00 row falls below 09:45 on all three plots; 10:15 (read from 10:29) rises again.
     set15(m, m.m15.t[j], { mf: -1, bw: -1, rsi: -1 });
-    const { res } = run(m);
+    const { res } = simRun(m);
     for (const r of res.runs) {
       assert.equal(r.triggers.length, 1, r.runId);
       const rec = r.triggers[0];
@@ -307,7 +307,7 @@ describe('entry on the trigger row', () => {
     longTrigger(m, d + 1);  // the entry bar
     shortTrigger(m, d + 3); // opposite side: no cancel, just ignored
     longTrigger(m, d + 5);
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.deepEqual(r.triggers.map((x) => x.outcome), ['trade', 'ignored_position', 'ignored_position', 'ignored_position']);
     assert.deepEqual(r.triggers.map((x) => x.attempts.length), [1, 0, 0, 0]);
     assert.equal(r.trades.length, 1);
@@ -319,7 +319,7 @@ describe('entry on the trigger row', () => {
     const x = d + 3;
     setBar(m, x, 5000, 5000, 4995, 4995); // low 4995 <= S 4995.75: stop
     longTrigger(m, x);
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.trades.length, 2);
     assert.equal(r.trades[0].exitRow, x);
     assert.equal(r.trades[0].reason, 'stop');
@@ -342,7 +342,7 @@ describe('entry on the trigger row', () => {
     const m = build({ n: 330 });
     longTrigger(m, 329);
     resCandidate(m, F0 + 10, 5010); // a target exists, so this is not no_target
-    const { res } = run(m);
+    const { res } = simRun(m);
     for (const r of res.runs) {
       assert.equal(r.triggers[0].outcome, 'insufficient', r.runId);
       assert.deepEqual(r.triggers[0].attempts.map((a) => a.pass), [true], r.runId);
@@ -356,14 +356,14 @@ describe('entry on the trigger row', () => {
     longTrigger(m, 329);
     resCandidate(m, F0 + 10, 5010);
     set15(m, m.m15.t[q15(m, 329)], { mf: -1, bw: -1, rsi: -1 });
-    for (const r of run(m).res.runs) assert.equal(r.triggers[0].outcome, 'filtered', r.runId);
+    for (const r of simRun(m).res.runs) assert.equal(r.triggers[0].outcome, 'filtered', r.runId);
   });
 
   it('a trigger on the second-to-last row enters on the last row and stays open', () => {
     const m = build({ n: 330 });
     longTrigger(m, 328);
     resCandidate(m, F0 + 10, 5010);
-    const { r, res } = run(m);
+    const { r, res } = simRun(m);
     const t = r.trades[0];
     assert.equal(t.entryRow, 329);
     assert.equal(t.eQ, Q(5000.25));
@@ -377,7 +377,7 @@ describe('entry on the trigger row', () => {
     const { m, d } = canonicalLong();
     longTrigger(m, d + 1);
     shortTrigger(m, d + 2);
-    const { res } = run(m);
+    const { res } = simRun(m);
     for (const r of res.runs) {
       for (const s of [r.whole, r.first, r.second]) {
         for (const k of ['expired', 'cancelled', 'ignored_window']) assert.equal(s.funnel[k], 0, `${r.runId} ${k}`);
@@ -418,7 +418,7 @@ describe('first eligible row F', () => {
       const m = build();
       longTrigger(m, d);
       resCandidate(m, F0 - 10, 5010);
-      for (const r of run(m).res.runs) {
+      for (const r of simRun(m).res.runs) {
         assert.equal(r.triggers.length, 0, `trigger at ${d}`);
         assert.equal(r.trades.length, 0, `trigger at ${d}`);
       }
@@ -429,7 +429,7 @@ describe('first eligible row F', () => {
     const m = build({ hist15: 80 });
     longTrigger(m, 310);
     resCandidate(m, 305, 5010);
-    assert.equal(run(m).r.triggers.length, 0);
+    assert.equal(simRun(m).r.triggers.length, 0);
   });
 
   it('a trigger on F counts and may use lookbacks before F', () => {
@@ -437,7 +437,7 @@ describe('first eligible row F', () => {
     longTrigger(m, F0);
     resCandidate(m, 200, 5010);
     setBar(m, F0 - 1, 5000, 5000, 4990, 5000); // before d: not part of the setup low
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.triggers.length, 1);
     assert.equal(r.trades[0].tQ, Q(5010));
     assert.equal(r.trades[0].setupQ, Q(5000));
@@ -464,7 +464,7 @@ describe('15m filter', () => {
       longTrigger(m, k);
       resCandidate(m, F0 + 5, 5010);
       for (const [S, v] of [[at(9, 30), 10], [at(9, 45), 5], [at(10, 0), 20]]) set15(m, S, { mf: v, bw: v, rsi: v });
-      for (const r of run(m).res.runs) assert.equal(r.trades.length, want, r.runId);
+      for (const r of simRun(m).res.runs) assert.equal(r.trades.length, want, r.runId);
     });
   }
 
@@ -480,7 +480,7 @@ describe('15m filter', () => {
       const { m, k } = canonicalLong();
       const j = q15(m, k);
       for (const [key, [prev, cur]] of Object.entries(vals)) { m.m15[key][j - 1] = prev; m.m15[key][j] = cur; }
-      const { res } = run(m);
+      const { res } = simRun(m);
       for (const r of res.runs) assert.equal(r.trades.length, want[r.runId], r.runId);
     });
     it(`short (Falling): ${name}, mirrored`, () => {
@@ -488,7 +488,7 @@ describe('15m filter', () => {
       const j = q15(m, k);
       const neg = (v) => (v === null ? null : -v);
       for (const [key, [prev, cur]] of Object.entries(vals)) { m.m15[key][j - 1] = neg(prev); m.m15[key][j] = neg(cur); }
-      const { res } = run(m);
+      const { res } = simRun(m);
       for (const r of res.runs) assert.equal(r.trades.length, want[r.runId], r.runId);
     });
   }
@@ -514,7 +514,7 @@ describe('stop clamp (2 to 8 points on the 0.25 grid)', () => {
   for (const [low, raw, D, floor, cap] of cases) {
     it(`setup low ${low}: raw ${raw} → D ${D}`, () => {
       const { m } = longWith({ setupLow: low });
-      const t = run(m).r.trades[0];
+      const t = simRun(m).r.trades[0];
       assert.equal(t.eQ, Q(5000.25));
       assert.equal(t.rawDistQ, Q(raw));
       assert.equal(t.dQ, Q(D));
@@ -526,7 +526,7 @@ describe('stop clamp (2 to 8 points on the 0.25 grid)', () => {
 
   it('an entry open at or below the raw stop clamps D to 2 (no skip)', () => {
     const { m } = longWith({ setupLow: 4999, open: 4998.5 });
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.eQ, Q(4998.75));
     assert.equal(t.rawDistQ, Q(0));
     assert.equal(t.dQ, Q(2));
@@ -536,7 +536,7 @@ describe('stop clamp (2 to 8 points on the 0.25 grid)', () => {
   it('short clamp mirrors: raw stop above E', () => {
     const { m, d } = canonicalShort();
     setBar(m, d, 5000, 5009, 5000, 5000); // E 4999.75, raw stop 5009.25 → raw 9.5, D 8, S 5007.75
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.rawDistQ, Q(9.5));
     assert.equal(t.dQ, Q(8));
     assert.equal(t.sQ, Q(5007.75));
@@ -558,26 +558,26 @@ describe('target selection', () => {
     resCandidate(m, 314, 5001); m.m1.h[311] = 5001.25; m.m1.o[311] = 5001.25; m.m1.c[311] = 5001.25; m.m1.l[311] = 5001.25;
     resCandidate(m, 318, 5002); m.m1.res[317] = 5002;
     m.m1.res[250] = 5001.5; setBar(m, 247, 5001.5, 5001.5, 5001.5, 5001.5);
-    assert.equal(run(m).r.trades[0].tQ, Q(5003));
+    assert.equal(simRun(m).r.trades[0].tQ, Q(5003));
   });
 
   it('a candidate on row k counts; one on row k+1 does not', () => {
     const a = longWith();
     a.m.m1.res.fill(null);
     resCandidate(a.m, a.k, 5002);
-    assert.equal(run(a.m).r.trades[0].tQ, Q(5002));
+    assert.equal(simRun(a.m).r.trades[0].tQ, Q(5002));
 
     const b = longWith();
     b.m.m1.res.fill(null);
     resCandidate(b.m, b.k + 1, 5002);
-    const { r } = run(b.m);
+    const { r } = simRun(b.m);
     assert.equal(r.trades.length, 0);
     assert.equal(r.triggers[0].outcome, 'no_target');
   });
 
   it('no candidate above R closes the window "no target"', () => {
     const { m } = longWith({ target: 4999 });
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.triggers[0].outcome, 'no_target');
     assert.equal(r.whole.funnel.no_target, 1);
   });
@@ -589,7 +589,7 @@ describe('target selection', () => {
     supCandidate(m, 306, 4996);
     supCandidate(m, 310, 5001);
     supCandidate(m, 314, 5000);
-    assert.equal(run(m).r.trades[0].tQ, Q(4996));
+    assert.equal(simRun(m).r.trades[0].tQ, Q(4996));
   });
 });
 
@@ -602,9 +602,9 @@ describe('target candidates with a coarser SR resolution (sr_period_s)', () => {
     m.m1.res[318] = 5000; m.m1.res[319] = 5006;     // row 319 sits in the 5m bar of rows 315-319
     setBar(m, 311, 5004, 5004, 5004, 5004);         // high[j-3] for j = 314, but its 5m bar (295-299) tops at 5000
     m.m1.res[313] = 5000; m.m1.res[314] = 5004;
-    assert.equal(run(m).r.trades[0].tQ, Q(5004));   // default 1m rule: only the row 314 step counts
+    assert.equal(simRun(m).r.trades[0].tQ, Q(5004));   // default 1m rule: only the row 314 step counts
     m.srPeriodS = 300;
-    const { res, r } = run(m);
+    const { res, r } = simRun(m);
     assert.equal(r.trades[0].tQ, Q(5006));
     assert.equal(res.info.srPeriodS, 300);
   });
@@ -615,7 +615,7 @@ describe('target candidates with a coarser SR resolution (sr_period_s)', () => {
     setBar(m, 302, 5000, 5000, 4994, 5000);
     m.m1.sup[318] = 5000; m.m1.sup[319] = 4994;
     m.srPeriodS = 300;
-    assert.equal(run(m).r.trades[0].tQ, Q(4994));
+    assert.equal(simRun(m).r.trades[0].tQ, Q(4994));
   });
 
   it('across a halt the pivot is 3 existing 5m bars back, not 15 minutes back', () => {
@@ -626,7 +626,7 @@ describe('target candidates with a coarser SR resolution (sr_period_s)', () => {
     setBar(m, 302, 5000, 5006, 5000, 5000);         // 5m bars: 300-304, 305-309, (halt), 310-314, 315-319
     m.m1.res[318] = 5000; m.m1.res[319] = 5006;     // 15 minutes before row 315 falls inside the halt
     m.srPeriodS = 300;
-    assert.equal(run(m).r.trades[0].tQ, Q(5006));
+    assert.equal(simRun(m).r.trades[0].tQ, Q(5006));
   });
 
   it('a row with fewer than 3 earlier 5m bars gives no candidate', () => {
@@ -634,7 +634,7 @@ describe('target candidates with a coarser SR resolution (sr_period_s)', () => {
     m.m1.res.fill(null);
     m.m1.res[3] = 4990; m.m1.res[4] = 5001;         // row 4 sits in the first 5m bar of the data
     m.srPeriodS = 300;
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.triggers[0].outcome, 'no_target');
   });
 
@@ -647,7 +647,7 @@ describe('target candidates with a coarser SR resolution (sr_period_s)', () => {
     for (const ok of [60, 900, 3600]) {
       const { m } = longWith();
       m.srPeriodS = ok;
-      assert.equal(run(m).res.info.srPeriodS, ok);
+      assert.equal(simRun(m).res.info.srPeriodS, ok);
     }
   });
 });
@@ -658,7 +658,7 @@ describe('exits', () => {
   it('case 3: stop and target inside the same bar is a stop', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 3, 5000, 5010.25, 4995.75, 5000);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitCase, 3);
     assert.equal(t.reason, 'stop');
     assert.equal(t.exitQ, Q(4995.5));
@@ -670,7 +670,7 @@ describe('exits', () => {
   it('case 1: a gap open through the stop fills at the open less a tick', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 3, 4990, 4990, 4989, 4990);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitCase, 1);
     assert.equal(t.exitQ, Q(4989.75));
     assert.equal(fmtDollarsNq(t.nq), '-58.50');
@@ -681,7 +681,7 @@ describe('exits', () => {
   it('case 2: an open one tick through the target fills at the open', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 3, 5012, 5012, 4990, 4990);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitCase, 2);
     assert.equal(t.reason, 'target');
     assert.equal(t.exitQ, Q(5012));
@@ -691,7 +691,7 @@ describe('exits', () => {
   it('an open equal to the target is not case 2; the low then stops it', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 3, 5010, 5010, 4995, 4995);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitCase, 4);
     assert.equal(t.reason, 'stop');
     assert.equal(t.touched, true);
@@ -700,7 +700,7 @@ describe('exits', () => {
   it('case 4: the target needs one tick through and fills at max(T, open)', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 3, 5000, 5010.25, 5000, 5010);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitCase, 4);
     assert.equal(t.exitQ, Q(5010));
     assert.equal(fmtDollarsNq(t.nq), '42.75');
@@ -709,7 +709,7 @@ describe('exits', () => {
   it('an entry gap past the target exits on the entry bar by case 2', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 1, 5011, 5011, 5011, 5011);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitRow, k + 1);
     assert.equal(t.exitCase, 2);
     assert.equal(t.exitQ, Q(5011));
@@ -723,13 +723,13 @@ describe('exits', () => {
     const { m, k } = canonicalLong();
     setBar(m, k + 2, 5000, 5010, 5000, 5000);
     setBar(m, k + 3, 5000, 5000, 4995, 4995);
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.whole.touchedNotFilled, 1);
     assert.equal(r.whole.stopTakenTargetReached, 0);
 
     const b = canonicalLong();
     setBar(b.m, b.k + 3, 4995, 5011, 4995, 5000); // case 1, bar also meets the target rule
-    const rb = run(b.m).r;
+    const rb = simRun(b.m).r;
     assert.equal(rb.trades[0].exitCase, 1);
     assert.equal(rb.whole.stopTakenTargetReached, 1);
   });
@@ -737,28 +737,28 @@ describe('exits', () => {
   it('short exits mirror: target by low, stop by a gap above S', () => {
     const a = canonicalShort();
     setBar(a.m, a.k + 3, 5000, 5000, 4989.75, 4990);
-    const ta = run(a.m).r.trades[0];
+    const ta = simRun(a.m).r.trades[0];
     assert.equal(ta.reason, 'target');
     assert.equal(ta.exitQ, Q(4990));
     assert.equal(fmtDollarsNq(ta.nq), '47.75');
 
     const b = canonicalShort();
     setBar(b.m, b.k + 3, 5006, 5006, 5006, 5006);
-    const tb = run(b.m).r.trades[0];
+    const tb = simRun(b.m).r.trades[0];
     assert.equal(tb.exitCase, 1);
     assert.equal(tb.exitQ, Q(5006.25));
     assert.equal(fmtDollarsNq(tb.nq), '-33.50');
 
     const c = canonicalShort();
     setBar(c.m, c.k + 3, 5000, 5004.25, 4989.75, 5000);
-    const tc = run(c.m).r.trades[0];
+    const tc = simRun(c.m).r.trades[0];
     assert.equal(tc.exitCase, 3);
     assert.equal(tc.exitQ, Q(5004.5));
   });
 
   it('an open trade at end of data gets a mark Net $ with no exit slippage', () => {
     const { m } = canonicalLong();
-    const { r, res } = run(m);
+    const { r, res } = simRun(m);
     const t = r.trades[0];
     assert.equal(t.open, true);
     assert.equal(res.lastCloseQ, Q(5000));
@@ -782,7 +782,7 @@ describe('worked examples (design lines 80 and 91)', () => {
   it('target fill 5004.00 with E 5000.25 and D 7.5: Net 17.75, R 0.47', () => {
     const { m, k } = setup();
     setBar(m, k + 3, 5000, 5004.25, 5000, 5004);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.dQ, Q(7.5));
     assert.equal(t.sQ, Q(4992.75));
     assert.equal(fmtDollarsNq(t.nq), '17.75');
@@ -792,7 +792,7 @@ describe('worked examples (design lines 80 and 91)', () => {
   it('stop fill 4992.50: Net -39.75, R -1.06', () => {
     const { m, k } = setup();
     setBar(m, k + 3, 5000, 5000, 4992.75, 4995);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitQ, Q(4992.5));
     assert.equal(fmtDollarsNq(t.nq), '-39.75');
     assert.equal(fmtR(rHundredths(t.nq, t.dQ)), '-1.06');
@@ -801,7 +801,7 @@ describe('worked examples (design lines 80 and 91)', () => {
   it('a bar opening 5004.25 and trading down to 4992.00 exits at the target, 5004.25', () => {
     const { m, k } = setup();
     setBar(m, k + 3, 5004.25, 5004.25, 4992, 4993);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.exitCase, 2);
     assert.equal(t.exitQ, Q(5004.25));
   });
@@ -809,7 +809,7 @@ describe('worked examples (design lines 80 and 91)', () => {
   it('a stop at the 2-point floor with no gap: Nq -49, Dq 8 → R -1.23', () => {
     const { m, k } = longWith();
     setBar(m, k + 3, 5000, 5000, 4998.25, 4999);
-    const t = run(m).r.trades[0];
+    const t = simRun(m).r.trades[0];
     assert.equal(t.nq, -49);
     assert.equal(t.dQ, 8);
     assert.equal(fmtDollarsNq(t.nq), '-12.25');
@@ -890,7 +890,7 @@ describe('accounting', () => {
     longTrigger(m, 340);
     setBar(m, 340, 4999.75, 4999.75, 4999.75, 4999.75);
     resCandidate(m, 330, 5000);
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(r.trades.length, 2);
     const [a, b] = r.trades;
     assert.equal(a.open, false);
@@ -935,7 +935,7 @@ describe('accounting', () => {
     resCandidate(m, F0 + 10, 5010);
     setBar(m, 325, 5000, 5010.25, 5000, 5010);
     longTrigger(m, 370);
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.deepEqual(r.triggers.map((x) => x.segment), [1, 2]);
     assert.equal(r.first.funnel.triggers, 1);
     assert.equal(r.first.funnel.closed, 1);
@@ -959,7 +959,7 @@ describe('stale 15m attempts', () => {
     // The break comes before the trigger bar, so the trade (entry 331) is not a gap trade.
     longTrigger(m, 330);
     resCandidate(m, F0 + 10, 5010);
-    const { r, res } = run(m);
+    const { r, res } = simRun(m);
     assert.equal(m.m15.t[q15(m, 330)], at(10, 15));
     assert.deepEqual(r.triggers[0].attempts.map((a) => [a.stale, a.pass]), [['break', true]]);
     assert.deepEqual(r.whole.stale, { break: { pass: 1, fail: 0 }, no_break: { pass: 0, fail: 0 } });
@@ -973,7 +973,7 @@ describe('stale 15m attempts', () => {
     const m = build({ gaps: { 330: 1800 } });
     longTrigger(m, 329);
     resCandidate(m, F0 + 10, 5010);
-    const { r } = run(m);
+    const { r } = simRun(m);
     assert.equal(m.m15.t[q15(m, 329)], at(10, 15));
     assert.deepEqual(r.triggers[0].attempts.map((a) => [a.stale, a.pass]), [[null, true]]);
     assert.deepEqual(r.whole.stale, { break: { pass: 0, fail: 0 }, no_break: { pass: 0, fail: 0 } });
@@ -988,7 +988,7 @@ describe('stale 15m attempts', () => {
     set15(m, at(10, 0), { mf: 0, bw: 0, rsi: 0 }); // falls from 09:45 → every run fails
     longTrigger(m, 328);
     longTrigger(m, 329);
-    const { res } = run(m);
+    const { res } = simRun(m);
     for (const r of res.runs) {
       assert.deepEqual(r.triggers.map((x) => x.attempts.map((a) => a.stale)), [[null], ['no_break']], r.runId);
       assert.deepEqual(r.whole.stale, { break: { pass: 0, fail: 0 }, no_break: { pass: 0, fail: 1 } });
@@ -999,7 +999,7 @@ describe('stale 15m attempts', () => {
 
   it('empty 15m buckets inside the 1m range are reported', () => {
     const m = build({ gaps: { 330: 1800 }, all15: true });
-    const { res } = run(m);
+    const { res } = simRun(m);
     assert.deepEqual(res.info.emptyBuckets15m, [at(10, 30), at(10, 45)]);
     assert.equal(res.info.emptyBuckets15mOutside1mRange, 100);
   });
@@ -1023,7 +1023,7 @@ describe('non-finite plots', () => {
   it('1m nulls on the trigger row no longer block a long entry, and are counted per plot', () => {
     const { m, d } = canonicalLong();
     m.m1.bw[d] = null; m.m1.mf[d] = null; m.m1.sto[d] = null; m.m1.sto[d - 1] = null;
-    const { res } = run(m);
+    const { res } = simRun(m);
     for (const r of res.runs) assert.equal(r.trades.length, 1, r.runId);
     assert.equal(res.info.nonFinite['1m B plot 2 Blue Wave'], 1);
     assert.equal(res.info.nonFinite['1m B plot 4 Mny Flow'], 1);
@@ -1035,7 +1035,7 @@ describe('non-finite plots', () => {
   it('a null 15m Mny Flow on the read row fails HTF-a and HTF-c; HTF-b passes on the other two', () => {
     const { m, d } = canonicalLong();
     m.m15.mf[q15(m, d)] = null;
-    const { res } = run(m);
+    const { res } = simRun(m);
     const want = { 'HTF-a': 'filtered', 'HTF-b': 'trade', 'HTF-c': 'filtered' };
     for (const r of res.runs) assert.equal(r.triggers[0].outcome, want[r.runId], r.runId);
     assert.equal(res.info.nonFinite['15m B plot 4 Mny Flow'], 1);
@@ -1045,7 +1045,7 @@ describe('non-finite plots', () => {
     const { m, d } = canonicalLong();
     const j = q15(m, d);
     for (const key of ['mf', 'bw', 'rsi']) m.m15[key][j - 1] = null;
-    const { res } = run(m);
+    const { res } = simRun(m);
     for (const r of res.runs) assert.equal(r.triggers[0].outcome, 'filtered', r.runId);
     assert.equal(res.info.nonFinite['15m B plot 2 Blue Wave'], 1);
     assert.equal(res.info.nonFinite['15m B plot 15 RSI'], 1);

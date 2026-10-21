@@ -540,37 +540,37 @@ function fixture({ n1 = N1, n15 = N15, buys = 3, shorts = 3, now = NOW } = {}) {
   };
 }
 
-const run = (over = {}, base = fixture()) => computeStatus({ ...base, ...over });
+const statusOf = (over = {}, base = fixture()) => computeStatus({ ...base, ...over });
 
 describe('computeStatus: pass rule', () => {
   it('verifies at 300 valid final 1m rows, 3 buys, 3 shorts and 20 valid final 15m rows', () => {
-    const r = run();
+    const r = statusOf();
     assert.equal(r.status, 'verified');
     assert.match(r.reason, /^pass:/);
   });
 
   it('is unverified at 299 valid final 1m rows', () => {
-    const r = run({}, fixture({ n1: 299 }));
+    const r = statusOf({}, fixture({ n1: 299 }));
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /coverage short/);
   });
 
   it('is unverified with 2 Buy rows', () => {
-    assert.equal(run({}, fixture({ buys: 2 })).status, 'unverified');
+    assert.equal(statusOf({}, fixture({ buys: 2 })).status, 'unverified');
   });
 
   it('is unverified with 2 short triggers', () => {
-    assert.equal(run({}, fixture({ shorts: 2 })).status, 'unverified');
+    assert.equal(statusOf({}, fixture({ shorts: 2 })).status, 'unverified');
   });
 
   it('is unverified with 19 valid final 15m rows', () => {
-    assert.equal(run({}, fixture({ n15: 19 })).status, 'unverified');
+    assert.equal(statusOf({}, fixture({ n15: 19 })).status, 'unverified');
   });
 
   it('does not count a row that is not final', () => {
     const base = fixture();
     base.recorder.data.rows.tab1[String(T1 + 5 * MIN)].final = false;
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /1m 299\//);
   });
@@ -578,7 +578,7 @@ describe('computeStatus: pass rule', () => {
   it('does not count a row that is not valid', () => {
     const base = fixture();
     base.recorder.data.rows.tab2[String(T1)].valid = false;
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /15m 19\//);
   });
@@ -587,13 +587,13 @@ describe('computeStatus: pass rule', () => {
     const base = fixture({ shorts: 3 });
     const shortRow = base.recorder.data.rows.tab1[String(T1 + 10 * MIN)];
     shortRow.first.b[2] = 59;
-    assert.equal(run({}, base).status, 'unverified');
+    assert.equal(statusOf({}, base).status, 'unverified');
   });
 
   it('counts a Buy when plot 6 is finite and not zero (a null does not count)', () => {
     const base = fixture({ buys: 3 });
     base.recorder.data.rows.tab1[String(T1 + 1 * MIN)].first.b[6] = null;
-    assert.equal(run({}, base).status, 'unverified');
+    assert.equal(statusOf({}, base).status, 'unverified');
   });
 });
 
@@ -603,7 +603,7 @@ describe('computeStatus: cut-off entries', () => {
     base.history.data.entries.push({
       kind: 'mismatch', tab: 'tab1', row_time: T1, values: 'absent', detected_at: START + 500,
     });
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /1m 299\//);
   });
@@ -613,14 +613,14 @@ describe('computeStatus: cut-off entries', () => {
     base.history.data.entries.push({
       kind: 'mismatch', tab: 'tab1', row_time: T1 + 100 * MIN, values: 'absent', detected_at: START + 500,
     });
-    assert.equal(run({}, base).status, 'unverified');
+    assert.equal(statusOf({}, base).status, 'unverified');
   });
 
   it('excludes rows stored at or before the cut-off detection time', () => {
     const base = fixture();
     const lostAt = base.recorder.data.rows.tab1[String(T1 + 99 * MIN)].stored_at;
     base.guard = guardOk({ lost_at: lostAt });
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /1m 200\//);
   });
@@ -628,14 +628,14 @@ describe('computeStatus: cut-off entries', () => {
   it('a lost_at cut-off counts as an entry with no row', () => {
     const base = fixture();
     base.guard = guardOk({ lost_at: START + 1 });
-    assert.equal(run({}, base).status, 'verified');
+    assert.equal(statusOf({}, base).status, 'verified');
   });
 
   it('a broker-reset stamp is a cut-off with no row', () => {
     const base = fixture();
     const stamp = base.recorder.data.rows.tab1[String(T1 + 99 * MIN)].stored_at;
     base.guard = guardOk({ reset_stamps: [stamp] });
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /1m 200\//);
   });
@@ -648,7 +648,7 @@ describe('computeStatus: cut-off entries', () => {
     base.guard = guardOk({
       draw_mismatches: [{ tab: 'tab1', row_time: T1 + 100 * MIN, old: 'absent', new: 'absent', detected_at: START + 100 }],
     });
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /1m 298\//);
   });
@@ -656,13 +656,13 @@ describe('computeStatus: cut-off entries', () => {
   it('with no entries at all the status is unverified', () => {
     const base = fixture();
     base.history.data.entries = [];
-    assert.equal(run({}, base).status, 'unverified');
+    assert.equal(statusOf({}, base).status, 'unverified');
   });
 
   it('a malformed draw_mismatches array is unverified', () => {
     const base = fixture();
     base.guard = { state: 'ok', guard: { ...guardOk().guard, draw_mismatches: 'x' } };
-    assert.equal(run({}, base).status, 'unverified');
+    assert.equal(statusOf({}, base).status, 'unverified');
   });
 });
 
@@ -670,10 +670,10 @@ describe('computeStatus: stale recorder', () => {
   it('a tab-1 poll 10 s old is fresh, one 10.001 s old is stale', () => {
     const fresh = fixture();
     fresh.recorder.data.last_poll_t1 = NOW - 10000;
-    assert.equal(run({}, fresh).status, 'verified');
+    assert.equal(statusOf({}, fresh).status, 'verified');
     const stale = fixture();
     stale.recorder.data.last_poll_t1 = NOW - 10001;
-    const r = run({}, stale);
+    const r = statusOf({}, stale);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /stale: tab1/);
   });
@@ -681,10 +681,10 @@ describe('computeStatus: stale recorder', () => {
   it('a tab-2 poll 15 s old is fresh, one 15.001 s old is stale', () => {
     const fresh = fixture();
     fresh.recorder.data.last_poll_t2 = NOW - 15000;
-    assert.equal(run({}, fresh).status, 'verified');
+    assert.equal(statusOf({}, fresh).status, 'verified');
     const stale = fixture();
     stale.recorder.data.last_poll_t2 = NOW - 15001;
-    const r = run({}, stale);
+    const r = statusOf({}, stale);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /stale: tab2/);
   });
@@ -692,13 +692,13 @@ describe('computeStatus: stale recorder', () => {
   it('a poll time that was never recorded counts as stale', () => {
     const base = fixture();
     base.recorder.data.last_poll_t1 = null;
-    assert.equal(run({}, base).status, 'unverified');
+    assert.equal(statusOf({}, base).status, 'unverified');
   });
 
   it('a newest closed 15m row missing from the records is stale', () => {
     const base = fixture();
     delete base.recorder.data.rows.tab2[String(T1 + (N15 - 1) * QUARTER)];
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /stale: newest closed tab2/);
     assert.equal(r.retry, undefined);
@@ -708,7 +708,7 @@ describe('computeStatus: stale recorder', () => {
     const base = fixture();
     const newest = T1 + (N1 - 1) * MIN;
     delete base.recorder.data.rows.tab1[String(newest)];
-    const r = run({}, base);
+    const r = statusOf({}, base);
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /stale: newest closed tab1/);
   });
@@ -719,7 +719,7 @@ describe('computeStatus: stale recorder', () => {
     const now = closeMs + 5000;
     const base = fixture({ now });
     delete base.recorder.data.rows.tab1[String(newest)];
-    const r = run({ now }, base);
+    const r = statusOf({ now }, base);
     assert.equal(r.status, 'unverified');
     assert.equal(r.retry, true);
   });
@@ -730,62 +730,62 @@ describe('computeStatus: stale recorder', () => {
     const now = closeMs + 12001;
     const base = fixture({ now });
     delete base.recorder.data.rows.tab1[String(newest)];
-    const r = run({ now }, base);
+    const r = statusOf({ now }, base);
     assert.match(r.reason, /stale: newest closed tab1/);
     assert.equal(r.retry, undefined);
   });
 
   it('a newest closed row that cannot be read (null) is unverified', () => {
-    const r = run({ newestLive: { tab1: null, tab2: T1 } });
+    const r = statusOf({ newestLive: { tab1: null, tab2: T1 } });
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /cannot read tab1/);
   });
 
   it('a missing newestLive object is unverified', () => {
-    assert.equal(run({ newestLive: undefined }).status, 'unverified');
+    assert.equal(statusOf({ newestLive: undefined }).status, 'unverified');
   });
 });
 
 describe('computeStatus: unreadable files', () => {
   it('a missing recorder.json is unverified', () => {
-    const r = run({ recorder: { state: 'missing', data: null } });
+    const r = statusOf({ recorder: { state: 'missing', data: null } });
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /recorder\.json missing/);
   });
 
   it('a corrupt recorder.json is unverified', () => {
-    assert.equal(run({ recorder: { state: 'corrupt', data: null } }).status, 'unverified');
+    assert.equal(statusOf({ recorder: { state: 'corrupt', data: null } }).status, 'unverified');
   });
 
   it('a missing mismatch_history.json is unverified', () => {
-    const r = run({ history: { state: 'missing', data: null } });
+    const r = statusOf({ history: { state: 'missing', data: null } });
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /mismatch_history\.json missing/);
   });
 
   it('a corrupt mismatch_history.json is unverified', () => {
-    assert.equal(run({ history: { state: 'corrupt', data: null } }).status, 'unverified');
+    assert.equal(statusOf({ history: { state: 'corrupt', data: null } }).status, 'unverified');
   });
 
   it('a missing guard.json that is not fresh is unverified', () => {
-    const r = run({ guard: { state: 'missing', guard: null, fresh: false } });
+    const r = statusOf({ guard: { state: 'missing', guard: null, fresh: false } });
     assert.equal(r.status, 'unverified');
     assert.match(r.reason, /not fresh/);
   });
 
   it('a missing guard.json in the fresh state counts as no stored mismatches and can pass', () => {
-    const r = run({ guard: { state: 'missing', guard: null, fresh: true } });
+    const r = statusOf({ guard: { state: 'missing', guard: null, fresh: true } });
     assert.equal(r.status, 'verified');
   });
 
   it('a corrupt guard.json is unverified, even when fresh is set', () => {
-    assert.equal(run({ guard: { state: 'corrupt', guard: null, fresh: true } }).status, 'unverified');
+    assert.equal(statusOf({ guard: { state: 'corrupt', guard: null, fresh: true } }).status, 'unverified');
   });
 });
 
 describe('computeStatus: result shape', () => {
   it('returns only status and reason when verified or stale, and retry only for a just-closed missing row', () => {
-    const ok = run();
+    const ok = statusOf();
     assert.deepEqual(Object.keys(ok).sort(), ['reason', 'status']);
   });
 });

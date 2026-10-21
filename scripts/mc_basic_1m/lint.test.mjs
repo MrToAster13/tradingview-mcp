@@ -8,14 +8,16 @@
  *   node --test "scripts/mc_basic_1m/lint.test.mjs"
  *
  * This file is linted too. Restricted words are assembled with W() so that none appears whole.
- * templates.mjs is read as text, not imported: a dynamic import is banned by the same lint, and
- * a static import would stop this file from loading while templates.mjs is missing.
+ * The template lints check the strings templates.mjs exports, imported statically. templates.mjs
+ * builds them with join and concatenation, so a text scan of the file cannot see them. The file text
+ * is still read for the freeze, get, set, Proxy and Map checks.
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TEMPLATES, WRITE_GUARD, READ_GUARD } from './templates.mjs';
 
 /* ---------- restricted names, assembled so that no whole copy sits in this file ---------- */
 
@@ -25,6 +27,7 @@ const DYNAMIC_IMPORT = W('imp', 'ort');
 const CHROME_LIB = W('chrome-remote-', 'interface');
 const RUNTIME = W('Run', 'time');
 const SEND_CALL = W('.se', 'nd(');
+const RUN_CALL = W('ru', 'n(');
 const DRAW = W('draw', '_trade');
 const TEST_SET_DIR = W('__test', 'SetStateDir');
 const WAIT_TEXT = 'await new Promise(resolve => setTimeout(resolve, 5000))';
@@ -255,18 +258,22 @@ function report(list) {
   if (list.length > 0) assert.fail(`${list.length} violation(s):\n${list.map(fmt).join('\n')}`);
 }
 
-/* ---------- templates.mjs read as text ---------- */
+/* ---------- templates.mjs exports, and its text ---------- */
 
-function loadTemplates() {
-  if (!hasFile('templates.mjs')) return null;
-  const text = SOURCE.get('templates.mjs');
+/** Each exported template and guard string, by name. A name whose export is not a string is left out, so the presence test reports it. */
+function loadTemplates(templates, guards) {
   const raw = new Map();
-  for (const m of text.matchAll(/([A-Za-z_]\w*)\s*[:=]\s*`([^`]*)`/g)) {
-    if (!raw.has(m[1])) raw.set(m[1], m[2]);
+  if (templates !== null && typeof templates === 'object') {
+    for (const name of Object.keys(templates)) {
+      if (typeof templates[name] === 'string') raw.set(name, templates[name]);
+    }
   }
-  return { text, raw };
+  for (const [name, value] of Object.entries(guards)) {
+    if (typeof value === 'string') raw.set(name, value);
+  }
+  return { text: SOURCE.get('templates.mjs'), raw };
 }
-const TPL = loadTemplates();
+const TPL = loadTemplates(TEMPLATES, { WRITE_GUARD, READ_GUARD });
 
 /** Runs fn(name, raw) for each of the five templates that templates.mjs defines. */
 function eachTemplate(fn) {
@@ -351,7 +358,7 @@ function ownerViolations() {
   return out;
 }
 
-/** Every run( call in every file: the first argument must be a string literal. draw_trade only in draw.mjs. */
+/** Every call of a function named run, in every file: the first argument must be a string literal. draw_trade only in draw.mjs. */
 function runCalls(text) {
   const out = [];
   for (const m of text.matchAll(/(?<![A-Za-z0-9_$])run\s*\(/g)) {
@@ -370,7 +377,7 @@ function drawViolations() {
       if (at !== -1) out.push(fileViol(file, text, at, DRAW, 'draw_trade text allowed only in templates.mjs, cdp.mjs, draw.mjs and tests (design 133)'));
     }
     for (const call of runCalls(text)) {
-      if (call.lit === null) out.push(fileViol(file, text, call.index, 'run(', 'first argument of run( must be a string literal (design 133)'));
+      if (call.lit === null) out.push(fileViol(file, text, call.index, RUN_CALL, 'first argument of ' + RUN_CALL + ' must be a string literal (design 135)'));
       else if (call.lit === DRAW && file !== 'draw.mjs') out.push(fileViol(file, text, call.index, `run("${DRAW}"`, 'run of draw_trade only in draw.mjs (design 133)'));
     }
   }
@@ -484,19 +491,36 @@ function cdpSendViolations() {
   return out;
 }
 
-function cdpClientViolations() {
-  const text = SOURCE.get('cdp.mjs');
+/*
+ * Design line 137: client1, client2 and candidate appear only directly before the send call or .close(, or as
+ * the first argument of evaluate(c, expression), and c only before the send call. The client must still be
+ * held, so the lint also accepts the forms that store or test the reference and pass it nowhere: the
+ * declaration let NAME = null;, the reset NAME = null;, the open NAME = await CDP({ port: 9222, target });
+ * as a whole statement, and the tests NAME === null and NAME !== null. Any alias, destructuring, member read
+ * or other use still fails.
+ */
+function clientUseOk(code, m) {
+  const name = m[1];
+  const at = m.index;
+  const after = code.slice(at + name.length, at + name.length + 60);
+  const before = code.slice(Math.max(0, at - 20), at);
+  if (/^\.send\(/.test(after)) return true;
+  if (/evaluate\(\s*$/.test(before)) return true;
+  if (name === 'c') return false;
+  if (/^\.close\(/.test(after)) return true;
+  if (/(?<![A-Za-z0-9_$])let\s+$/.test(before)) return /^\s*=\s*null\s*;/.test(after);
+  const open = /^\s*=\s*await\s+CDP\(\{\s*port:\s*9222,\s*target\s*\}\)\s*;/;
+  if (/^\s*=\s*null\s*;/.test(after) || open.test(after)) return /(?:^|[;{}]|\n)\s*$/.test(before);
+  return /^\s*[!=]==\s*null(?![A-Za-z0-9_$])/.test(after);
+}
+
+function cdpClientViolations(text = SOURCE.get('cdp.mjs')) {
   const out = [];
   const code = codeOnly(text);
   for (const m of code.matchAll(/(?<![A-Za-z0-9_$.])(client1|client2|candidate|c)(?![A-Za-z0-9_$])/g)) {
     if (inImportRanges(text, m.index)) continue;
-    const after = code.slice(m.index + m[0].length, m.index + m[0].length + 8);
-    const before = code.slice(Math.max(0, m.index - 12), m.index);
-    const okSend = /^\.send\(/.test(after);
-    const okClose = m[1] !== 'c' && /^\.close\(/.test(after);
-    const okEvaluate = /evaluate\(\s*$/.test(before);
-    if (!okSend && !okClose && !okEvaluate) {
-      out.push(fileViol('cdp.mjs', text, m.index, m[1], 'client identifiers only before .send(, .close( or as the first argument of evaluate( (design 135)'));
+    if (!clientUseOk(code, m)) {
+      out.push(fileViol('cdp.mjs', text, m.index, m[1], 'client identifiers only before ' + SEND_CALL + ' or .close(, as the first argument of evaluate(, or in their declaration, open, reset and null test (design 137)'));
     }
   }
   return out;
@@ -602,7 +626,7 @@ describe('file lints (every .mjs in the folder)', () => {
   test('no dynamic import call (design 123)', () => report(dynamicViolations()));
   test('import allowlists per file (design 133, api_v1 rules)', () => report(importViolations()));
   test('client library and CDP method calls stay in their owner files (design 133, 135)', () => report(ownerViolations()));
-  test('draw_trade text and run( first argument (design 133)', () => report(drawViolations()));
+  test('draw_trade text and the first argument of every run call (design 135)', () => report(drawViolations()));
   test('__testSetStateDir only in store.mjs and tests (api_v1 store section)', () => report(testDirViolations()));
   test('test files do not reach cdp.mjs or cli.mjs through imports (design 133)', () => report(closureViolations()));
   test('node:os is used only for tmpdir in test files (design 133)', () => report(osUsageViolations()));
@@ -627,7 +651,7 @@ describe('cdp.mjs lints (design 123, 135)', () => {
     if (!hasFile('cdp.mjs')) return t.skip('cdp.mjs is not built yet');
     report(cdpClientViolations());
   });
-  test('computed member access limited to two lookups; exports only run (design 123, 125, api_v1)', (t) => {
+  test('computed member access limited to two lookups; the only export is the run function (design 137, api_v1)', (t) => {
     if (!hasFile('cdp.mjs')) return t.skip('cdp.mjs is not built yet');
     report(cdpMemberViolations());
   });
@@ -636,11 +660,16 @@ describe('cdp.mjs lints (design 123, 135)', () => {
 /* ---------- templates.mjs lints ---------- */
 
 describe('templates.mjs lints (design 125, 127 to 134)', () => {
-  test('templates.mjs defines the five templates and both guard texts (design 125, 134)', (t) => {
+  test('templates.mjs defines the five templates and both guard texts (design 127, 136)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report([...TEMPLATE_NAMES, ...GUARD_NAMES]
+    const out = [...TEMPLATE_NAMES, ...GUARD_NAMES]
       .filter((n) => !TPL.raw.has(n))
-      .map((n) => tplViol(n, n, 'not found as a backtick string in templates.mjs')));
+      .map((n) => tplViol(n, n, 'not exported by templates.mjs as a string'));
+    for (const n of Object.keys(TEMPLATES)) {
+      if (!TEMPLATE_NAMES.includes(n)) out.push(tplViol(n, n, 'TEMPLATES holds a name outside the five templates (design 127)'));
+    }
+    if (!Object.isFrozen(TEMPLATES)) out.push(tplViol('TEMPLATES', 'Object.freeze', 'TEMPLATES must be frozen (design 127)'));
+    report(out);
   });
 
   test('each template is (async () => { ... })() (design 134)', (t) => {

@@ -322,4 +322,13 @@ export function fillTemplate(text, names, values) {
   return out;
 }
 
+// Fills text with the placeholder list of the named template. cdp.mjs and fake_chart.mjs call this, so
+// cdp.mjs needs no computed lookup of PLACEHOLDERS (design line 137).
+export function fillPlaceholders(name, text, values) {
+  if (typeof name !== 'string' || !Object.hasOwn(PLACEHOLDERS, name)) {
+    throw fail('E_ARGS', 'unknown template name');
+  }
+  return fillTemplate(text, PLACEHOLDERS[name], values);
+}
+
 export { TEMPLATES, PLACEHOLDERS, CALLER_KEYS, WRITE_GUARD, READ_GUARD, RUN_COLOURS };

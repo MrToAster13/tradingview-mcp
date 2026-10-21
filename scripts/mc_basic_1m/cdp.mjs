@@ -1,6 +1,6 @@
 import CDP from 'chrome-remote-interface';
 import { createHash } from 'node:crypto';
-import { TEMPLATES, PLACEHOLDERS, prepareValues, fillTemplate } from './templates.mjs';
+import { TEMPLATES, prepareValues, fillPlaceholders } from './templates.mjs';
 
 // SHA-256 of each template text in templates.mjs. templates_hash.test.mjs recomputes and checks them.
 const TEMPLATE_SHA256 = Object.freeze({
@@ -43,7 +43,7 @@ function transportError(err) {
 }
 
 function isGuardRefusal(value) {
-  return value === 'E_GUARD' || (Array.isArray(value) && value[0] === 'E_GUARD');
+  return value === 'E_GUARD' || (Array.isArray(value) && value.at(0) === 'E_GUARD');
 }
 
 function evaluate(c, expression) {
@@ -60,8 +60,9 @@ function interpret(response) {
 }
 
 // Looks the template up once, hashes that same string, then fills it. Nothing is sent here.
+// The placeholder list is looked up inside templates.mjs, so cdp.mjs keeps only its two computed lookups (design line 137).
 function buildExpression(name, args, ctx) {
-  if (!Object.hasOwn(TEMPLATES, name) || !Object.hasOwn(TEMPLATE_SHA256, name) || !Object.hasOwn(PLACEHOLDERS, name)) {
+  if (!Object.hasOwn(TEMPLATES, name) || !Object.hasOwn(TEMPLATE_SHA256, name)) {
     throw coded('E_ARGS', `unknown template ${name}`);
   }
   const text = TEMPLATES[name];
@@ -70,7 +71,7 @@ function buildExpression(name, args, ctx) {
     throw coded('E_TEMPLATE_HASH', `template ${name} does not match its pinned SHA-256`);
   }
   const values = prepareValues(name, args, ctx);
-  return fillTemplate(text, PLACEHOLDERS[name], values);
+  return fillPlaceholders(name, text, values);
 }
 
 // Every listed chart page, with its chart id and the path the identity guard checks.
@@ -82,7 +83,7 @@ async function listPages() {
     .filter((t) => t.type === 'page')
     .map((t) => {
       const m = CHART_URL.exec(String(t.url));
-      return m ? { id: t.id, chart: m[1], path: `/chart/${m[1]}/` } : null;
+      return m ? { id: t.id, chart: m.at(1), path: `/chart/${m.at(1)}/` } : null;
     })
     .filter((p) => p !== null);
 }
@@ -102,8 +103,9 @@ async function dropTab1() {
 }
 
 async function openTab1(targetId) {
+  const target = targetId;
   try {
-    client1 = await CDP({ port: 9222, target: targetId });
+    client1 = await CDP({ port: 9222, target });
     await client1.send('Runtime.enable');
   } catch (err) {
     await dropTab1();
@@ -122,11 +124,11 @@ async function ensureTab1() {
     }
     throw coded('E_TAB1_MISSING', `tab 1 is listed ${matches.length} times, need exactly 1`);
   }
-  if (tab1Target !== null && matches[0].id !== tab1Target) {
+  if (tab1Target !== null && matches.at(0).id !== tab1Target) {
     await dropTab1();
     throw coded('E_CDP_LOST', 'tab 1 target id changed');
   }
-  if (client1 === null) await openTab1(matches[0].id);
+  if (client1 === null) await openTab1(matches.at(0).id);
 }
 
 async function evalTab1(expression) {
@@ -156,9 +158,12 @@ async function closeCandidate() {
 // Runs the read-only discover template on one listed page, over its own client, closed afterwards.
 async function discoverEntry(entry) {
   const expression = buildExpression('discover', {}, { guardPath: entry.path, expectedRes: TAB2_CTX_RES });
-  candidate = await CDP({ port: 9222, target: entry.id }).catch((err) => {
+  const target = entry.id;
+  try {
+    candidate = await CDP({ port: 9222, target });
+  } catch (err) {
     throw transportError(err);
-  });
+  }
   try {
     await candidate.send('Runtime.enable').catch((err) => {
       throw transportError(err);
@@ -178,7 +183,7 @@ async function discoverPath(path) {
   if (matches.length !== 1) {
     throw coded('E_ARGS', `discovery path ${path} is listed ${matches.length} times, need exactly 1`);
   }
-  return discoverEntry(matches[0]);
+  return discoverEntry(matches.at(0));
 }
 
 // Pins tab 2 when exactly one non-tab-1 page passes discovery. A page that vanishes mid-discovery is not a match.
@@ -197,8 +202,8 @@ async function pinTab2(pages) {
   }
   if (matched.length === 0) throw coded('E_TAB2_NONE', 'no open chart matches tab 2 (MES 15m with MarketCipher_B)');
   if (matched.length > 1) throw coded('E_TAB2_MANY', `${matched.length} charts match tab 2, need exactly 1`);
-  tab2Target = matched[0].id;
-  tab2Path = matched[0].path;
+  tab2Target = matched.at(0).id;
+  tab2Path = matched.at(0).path;
 }
 
 // Tab 2
@@ -211,8 +216,9 @@ async function dropTab2() {
 }
 
 async function openTab2() {
+  const target = tab2Target;
   try {
-    client2 = await CDP({ port: 9222, target: tab2Target });
+    client2 = await CDP({ port: 9222, target });
     await client2.send('Runtime.enable');
   } catch (err) {
     await dropTab2();
