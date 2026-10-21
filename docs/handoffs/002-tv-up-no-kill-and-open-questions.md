@@ -1,6 +1,6 @@
 # Handoff 002: tv_up no-kill fix and audit follow-ups, five open questions
 
-Status: blocked (the follow-up fixes passed audit and are being pushed; the open questions wait on Elijah)
+Status: blocked (the follow-up fixes in bcaec23 passed audit; the push and PR are next; the open questions wait on Elijah)
 
 ## Goal
 Elijah asked to work every ticket and task that could be done without him, using subagents, and to commit the uncommitted work. The pieces were Caddy after reboot, whether Tailscale Funnel is on, why the 10-19 and 10-20 forward check-ins produced nothing, and landing the feat/draw-trades-from-csv work. Elijah lifted the one-subagent cap on resume, so normal CLAUDE.md subagent use applies.
