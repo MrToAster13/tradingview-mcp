@@ -134,13 +134,21 @@ describe('drawTradesFromCsv()', () => {
     writeExport(dir, spec);
     return dir;
   };
-  let mesDir, twoSymDir, noPvDir;
+  let mesDir, twoSymDir, noPvDir, repeatDir;
 
   before(() => {
     root = mkdtempSync(join(tmpdir(), 'tv-trade-drawings-'));
     mesDir = exportDir({ orders: MES_ORDERS, balances: BALANCES });
     twoSymDir = exportDir({ orders: [...MNQ_ORDERS, ...MES_ORDERS], balances: BALANCES });
     noPvDir = exportDir({ orders: MES_ORDERS, balances: [] });
+    // The 1001 long bracket again under new order IDs: same side, bar and price.
+    // Placed one second after 1001 so the two entries do not share a Placing time.
+    const repeatCopy = [
+      'CME_MINI:MES1!,Sell,Stop,2,,4990.00,4990.00,Filled,,2026-03-02 10:00:01,2026-03-02 10:20:00,1012,,,',
+      'CME_MINI:MES1!,Sell,Limit,2,5020.00,,,Cancelled,,2026-03-02 10:00:01,2026-03-02 10:20:00,1013,,,',
+      'CME_MINI:MES1!,Buy,Market,2,,,5000.00,Filled,,2026-03-02 10:00:01,2026-03-02 10:00:00,1011,,20x,"1,000.00 USD"',
+    ];
+    repeatDir = exportDir({ orders: [...repeatCopy, ...MES_ORDERS], balances: BALANCES });
   });
   after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -246,6 +254,15 @@ describe('drawTradesFromCsv()', () => {
     ]);
     assert.deepEqual(r.drawn.map(d => d.order_id), ['2001']);
     assert.equal(calls.creates.length, 1);
+  });
+
+  it('two identical trades in one run: one draw and one skip', async () => {
+    const { _deps, calls, state } = fakeChart({ dir: repeatDir });
+    const r = await drawTradesFromCsv({ _deps });
+    assert.equal(calls.creates.length, 2, 'one long and one short; the repeat is not drawn');
+    assert.equal(r.drawn.filter(d => d.side === 'long').length, 1);
+    assert.deepEqual(r.skipped.filter(s => s.reason === 'already drawn'), [{ order_id: '1011', reason: 'already drawn' }]);
+    assert.equal(state.shapes.filter(s => s.name === 'long_position').length, 1);
   });
 
   it('a second run draws nothing new', async () => {

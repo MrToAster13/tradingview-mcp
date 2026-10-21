@@ -3,7 +3,8 @@
  * Bring up the remote TradingView MCP stack, one idempotent step at a time:
  *
  *   1/5 api key  TV_MCP_API_KEY must be set (>= 32 chars)
- *   2/5 cdp      TradingView answering on 127.0.0.1:<TV_CDP_PORT|9222>, else launch()
+ *   2/5 cdp      TradingView answering on 127.0.0.1:<TV_CDP_PORT|9222>; if it runs without
+ *                CDP, retry ~10s then refuse (never kill it); launch() only when none runs
  *   3/5 http     `node src/server.js --http` answering /health, else spawn it detached
  *   4/5 funnel   tailscale funnel :8443 -> http://127.0.0.1:<port>, else add it
  *   5/5 url      print https://<MagicDNS name>:8443/mcp
@@ -28,6 +29,8 @@ const FUNNEL_PORT = 8443;
 const LOCAL = '127.0.0.1';
 const HEALTH_WAIT_TRIES = 30;
 const HEALTH_WAIT_MS = 500;
+const CDP_RETRY_TRIES = 5;
+const CDP_RETRY_MS = 2000;
 const SERVER_JS = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server.js');
 
 const KEY_HELP = [
@@ -192,15 +195,26 @@ export async function tvUp({ env = process.env, argv = [], _deps } = {}) {
     const cdpPort = cdpPortFrom(env);
     const cdpUrl = `http://${LOCAL}:${cdpPort}/json/version`;
     const cdpUp = async () => { const r = await deps.httpRequest(cdpUrl); return !!r && r.status === 200; };
-    if (await cdpUp()) {
+    let up = await cdpUp();
+    if (!up && await deps.isTvRunning()) {
+      // TradingView is running. A single probe can stall past its timeout, so
+      // retry before deciding. Never launch here: launch() would kill it.
+      for (let i = 0; i < CDP_RETRY_TRIES && !up; i++) {
+        await deps.delay(CDP_RETRY_MS);
+        up = await cdpUp();
+      }
+      if (!up) {
+        throw new StepError(`TradingView is running without CDP on ${LOCAL}:${cdpPort} (no answer within ${(CDP_RETRY_TRIES * CDP_RETRY_MS) / 1000}s). Not killing it. Close TradingView yourself and re-run (or start it with --remote-debugging-port=${cdpPort}).`);
+      }
+    }
+    if (up) {
       log(`${step}: TradingView already answering on ${LOCAL}:${cdpPort}`);
     } else {
-      if (await deps.isTvRunning()) {
-        log(`    warning: TradingView is running without CDP on port ${cdpPort}; launching will kill and restart it.`);
-      }
+      // No TradingView process. kill_existing: false so launch() skips its
+      // up-front kill of any TradingView started since the check above.
       let result;
       try {
-        result = await deps.launch({ port: cdpPort });
+        result = await deps.launch({ port: cdpPort, kill_existing: false });
       } catch (err) {
         throw new StepError(`launch failed: ${err.message}`);
       }

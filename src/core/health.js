@@ -202,7 +202,7 @@ export async function uiState() {
 const WINDOWS_APPS_RE = /\\WindowsApps\\/i;
 
 function _resolveLaunchDeps(deps) {
-  return {
+  const resolved = {
     spawn: deps?.spawn || spawn,
     execSync: deps?.execSync || execSync,
     existsSync: deps?.existsSync || existsSync,
@@ -212,6 +212,29 @@ function _resolveLaunchDeps(deps) {
     delay: deps?.delay || ((ms) => new Promise((r) => setTimeout(r, ms))),
     probeCdp: deps?.probeCdp || _probeCdp,
   };
+  resolved.isTvRunning = deps?.isTvRunning || (() => _isTvRunning(resolved.execSync));
+  return resolved;
+}
+
+/**
+ * Whether a TradingView process is running. A check that cannot run counts
+ * as running, so callers that must not kill a user's TradingView refuse.
+ */
+function _isTvRunning(execSyncFn, platform = process.platform) {
+  if (platform === 'win32') {
+    try {
+      const out = execSyncFn('tasklist /FI "IMAGENAME eq TradingView.exe" /NH', { timeout: 5000, windowsHide: true }).toString();
+      return /TradingView\.exe/i.test(out);
+    } catch { return true; }
+  }
+  // Exact process-name match; -f would also match this repo's own path.
+  const cmd = platform === 'darwin' ? 'pgrep -x TradingView' : 'pgrep -i -x tradingview';
+  try {
+    execSyncFn(cmd, { timeout: 5000, stdio: 'ignore' });
+    return true;
+  } catch (e) {
+    return e?.status !== 1; // pgrep exits 1 when nothing matches
+  }
 }
 
 async function _probeCdp(cdpPort) {
@@ -331,6 +354,9 @@ export async function launch({ port, kill_existing, _deps } = {}) {
   const cdpPort = port || CDP_PORT;
   const killFirst = kill_existing !== false;
   const platform = process.platform;
+  // With kill_existing: false, the MSIX fallback below may only kill the copy
+  // this call spawned, so note whether one was already running.
+  const tvRunningAtStart = killFirst ? null : await deps.isTvRunning();
 
   const pathMap = {
     darwin: [
@@ -416,6 +442,11 @@ export async function launch({ port, kill_existing, _deps } = {}) {
     if (!info) {
       // Direct WindowsApps launch was blocked or CDP never bound — fall back to
       // a local copy of the package (see _copyMsixPackageLocal).
+      // The fallback kills TradingView first. With kill_existing: false that is
+      // only safe when nothing was running at the start (the only copy is ours).
+      if (!killFirst && tvRunningAtStart) {
+        throw new Error(`Direct TradingView launch did not bind CDP on port ${cdpPort}, and TradingView was not killed because kill_existing is false (a TradingView process was already running). Close TradingView yourself and retry, or launch it with --remote-debugging-port=${cdpPort}.`);
+      }
       const localExe = _copyMsixPackageLocal(tvPath, deps);
       userDataDir = _msixProfileDir(tvPath, deps.existsSync);
       const localArgs = userDataDir ? [...cdpArgs, `--user-data-dir=${userDataDir}`] : cdpArgs;

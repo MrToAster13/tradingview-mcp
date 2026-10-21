@@ -290,6 +290,8 @@ export async function drawTradesFromCsv({ export_timestamp, dry_run = false, _de
           continue;
         }
         if (fallback) fallbackSizing = true;
+        // Same shape as the existing-drawings read, so a repeat later in this run is skipped.
+        existing.push({ shape: plan.shape, time: anchor.time, price: anchor.price });
         drawn.push({
           order_id: fill.order_id, entity_id, side: fill.side, qty: fill.qty,
           entry_price: fill.entry_price, entry_time: unixToLocal(fill.entry_time),

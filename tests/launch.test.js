@@ -31,9 +31,12 @@ function mockChild({ failWith } = {}) {
  *   cdpBindsFor  — spawn paths (substring) after which probeCdp starts succeeding
  *   copyExists   — local copy already present
  *   profileExists — the MSIX roaming profile dir exists under %LOCALAPPDATA%Packages
+ *   tvRunning    — what the injected isTvRunning check reports
+ *   tasklistOut  — when set, isTvRunning is not injected and execSync answers
+ *                  tasklist with this text (exercises the default check)
  */
-function msixDeps({ spawnFailures = [], cdpBindsFor = [], copyExists = false, profileExists = false } = {}) {
-  const state = { spawned: [], spawnCalls: [], copies: [], removed: [], killed: 0, cdpUp: false };
+function msixDeps({ spawnFailures = [], cdpBindsFor = [], copyExists = false, profileExists = false, tvRunning = false, tasklistOut } = {}) {
+  const state = { spawned: [], spawnCalls: [], copies: [], removed: [], killed: 0, cdpUp: false, runningChecks: 0 };
   const deps = {
     existsSync: (p) => {
       if (p === MSIX_EXE) return true;
@@ -46,6 +49,7 @@ function msixDeps({ spawnFailures = [], cdpBindsFor = [], copyExists = false, pr
         return 'C:\\Program Files\\WindowsApps\\TradingView.Desktop_3.1.0.7818_x64__n534cwy3pjxzj\n';
       }
       if (cmd.includes('taskkill')) { state.killed++; return ''; }
+      if (tasklistOut !== undefined && cmd.includes('tasklist')) { state.runningChecks++; return tasklistOut; }
       throw new Error(`unexpected execSync: ${cmd}`);
     },
     spawn: (exe, args, opts) => {
@@ -61,6 +65,9 @@ function msixDeps({ spawnFailures = [], cdpBindsFor = [], copyExists = false, pr
     delay: async () => {},
     probeCdp: async () => (state.cdpUp ? CDP_VERSION : null),
   };
+  if (tasklistOut === undefined) {
+    deps.isTvRunning = async () => { state.runningChecks++; return tvRunning; };
+  }
   return { deps, state };
 }
 
@@ -118,6 +125,92 @@ describe('launch() — MSIX WindowsApps handling', { skip: !onWindows }, () => {
     assert.equal(result.cdp_ready, false);
     assert.equal(result.msix_local_copy, true);
     assert.ok(result.warning);
+  });
+});
+
+// ── kill_existing: false must not kill a TradingView the user has open ───
+
+describe('launch() — MSIX fallback honours kill_existing: false', { skip: !onWindows }, () => {
+  it('nothing running at start: kills only its own copy once, then spawns the local copy', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tvRunning: false });
+    const result = await launch({ kill_existing: false, _deps: deps });
+    assert.equal(result.success, true);
+    assert.equal(result.msix_local_copy, true);
+    assert.equal(state.runningChecks, 1);
+    assert.equal(state.killed, 1, 'no up-front kill, one kill before the local copy');
+    assert.equal(state.spawned.length, 2);
+    assert.match(state.spawned[1], /tradingview-mcp/);
+  });
+
+  it('TradingView running at start: does not kill and reports the failure', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tvRunning: true });
+    await assert.rejects(
+      () => launch({ kill_existing: false, _deps: deps }),
+      (err) => {
+        assert.match(err.message, /did not bind CDP/);
+        assert.match(err.message, /not killed because kill_existing is false/);
+        return true;
+      },
+    );
+    assert.equal(state.killed, 0);
+    assert.equal(state.copies.length, 0);
+    assert.equal(state.spawned.length, 1, 'local copy must not spawn');
+  });
+
+  it('TradingView running at start, direct spawn EACCES: still no kill', async () => {
+    const { deps, state } = msixDeps({ spawnFailures: ['WindowsApps'], cdpBindsFor: ['tradingview-mcp'], tvRunning: true });
+    await assert.rejects(() => launch({ kill_existing: false, _deps: deps }), /not killed because kill_existing is false/);
+    assert.equal(state.killed, 0);
+  });
+
+  it('TradingView running at start, direct spawn binds CDP: succeeds without killing', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['WindowsApps'], tvRunning: true });
+    const result = await launch({ kill_existing: false, _deps: deps });
+    assert.equal(result.success, true);
+    assert.equal(result.msix_local_copy, undefined);
+    assert.equal(state.killed, 0);
+  });
+
+  it('default kill_existing: fallback still kills, and no running check is made', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tvRunning: true });
+    const result = await launch({ _deps: deps });
+    assert.equal(result.success, true);
+    assert.equal(result.msix_local_copy, true);
+    assert.equal(state.runningChecks, 0);
+    assert.equal(state.killed, 2, 'up-front kill plus the fallback kill');
+  });
+
+  it('kill_existing: true behaves like the default', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tvRunning: true });
+    const result = await launch({ kill_existing: true, _deps: deps });
+    assert.equal(result.msix_local_copy, true);
+    assert.equal(state.runningChecks, 0);
+    assert.equal(state.killed, 2);
+  });
+
+  it('default running check reads tasklist through execSync: TradingView listed means no kill', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tasklistOut: 'TradingView.exe   4242 Console  1  250,000 K\r\n' });
+    await assert.rejects(() => launch({ kill_existing: false, _deps: deps }), /not killed/);
+    assert.equal(state.runningChecks, 1);
+    assert.equal(state.killed, 0);
+  });
+
+  it('default running check: tasklist with no match allows the fallback kill', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tasklistOut: 'INFO: No tasks are running which match the specified criteria.\r\n' });
+    const result = await launch({ kill_existing: false, _deps: deps });
+    assert.equal(result.msix_local_copy, true);
+    assert.equal(state.killed, 1);
+  });
+
+  it('default running check: a failing tasklist counts as running, so no kill', async () => {
+    const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tasklistOut: '' });
+    const execSync = deps.execSync;
+    deps.execSync = (cmd, opts) => {
+      if (cmd.includes('tasklist')) throw new Error('tasklist unavailable');
+      return execSync(cmd, opts);
+    };
+    await assert.rejects(() => launch({ kill_existing: false, _deps: deps }), /not killed/);
+    assert.equal(state.killed, 0);
   });
 });
 

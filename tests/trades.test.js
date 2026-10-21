@@ -356,6 +356,69 @@ describe('buildFills()', () => {
     assert.deepEqual(skipped, [{ order_id: '5101', reason: 'no bracket' }]);
   });
 
+  // Two longs placed in the same second, each with its own stop and limit.
+  const sameSecond = (levelA, levelB) => orders(
+    `CME_MINI:MES1!,Sell,Limit,1,5040.00,,,Cancelled,,2026-03-05 17:00:00,2026-03-05 17:20:00,10006,${levelB},,`,
+    `CME_MINI:MES1!,Sell,Stop,1,,5000.00,,Cancelled,,2026-03-05 17:00:00,2026-03-05 17:20:00,10005,${levelB},,`,
+    `CME_MINI:MES1!,Buy,Market,1,,,5010.00,Filled,,2026-03-05 17:00:00,2026-03-05 17:00:00,10004,${levelB},20x,"500.00 USD"`,
+    `CME_MINI:MES1!,Sell,Limit,1,5020.00,,,Cancelled,,2026-03-05 17:00:00,2026-03-05 17:20:00,10003,${levelA},,`,
+    `CME_MINI:MES1!,Sell,Stop,1,,4990.00,,Cancelled,,2026-03-05 17:00:00,2026-03-05 17:20:00,10002,${levelA},,`,
+    `CME_MINI:MES1!,Buy,Market,1,,,5000.00,Filled,,2026-03-05 17:00:00,2026-03-05 17:00:00,10001,${levelA},20x,"500.00 USD"`,
+  );
+
+  it('gives each same-second entry its own bracket when Level IDs link them', () => {
+    const { fills, skipped } = buildFills({ orders: sameSecond('L1', 'L2'), balances: PV, exportTime: EXPORT });
+    assert.deepEqual(skipped, []);
+    const byId = Object.fromEntries(fills.map(f => [f.order_id, f]));
+    assert.equal(fills.length, 2);
+    assert.deepEqual([byId['10001'].stop, byId['10001'].target], [4990, 5020]);
+    assert.deepEqual([byId['10004'].stop, byId['10004'].target], [5000, 5040]);
+  });
+
+  it('skips same-second entries that no Level ID links to a bracket', () => {
+    for (const [a, b] of [['', ''], ['L1', 'L1']]) {
+      const { fills, skipped } = buildFills({ orders: sameSecond(a, b), balances: PV, exportTime: EXPORT });
+      assert.deepEqual(fills, [], `levels ${a}/${b}`);
+      assert.deepEqual(skipped.map(s => s.order_id).sort(), ['10001', '10004'], `levels ${a}/${b}`);
+      for (const s of skipped) assert.equal(s.reason, 'ambiguous bracket');
+    }
+  });
+
+  it('skips a filled entry with a blank or whitespace fill price', () => {
+    for (const price of ['', '   ']) {
+      const { fills, skipped } = buildFills({
+        orders: orders(
+          'CME_MINI:MES1!,Sell,Limit,1,5020.00,,,Cancelled,,2026-03-05 18:00:00,2026-03-05 18:20:00,11003,,,',
+          'CME_MINI:MES1!,Sell,Stop,1,,4990.00,,Cancelled,,2026-03-05 18:00:00,2026-03-05 18:20:00,11002,,,',
+          `CME_MINI:MES1!,Buy,Market,1,,,${price},Filled,,2026-03-05 18:00:00,2026-03-05 18:00:00,11001,,20x,"500.00 USD"`,
+          'CME_MNQ1!,Sell,Limit,1,18100.00,,,Cancelled,,2026-03-05 19:00:00,2026-03-05 19:20:00,11103,,,',
+          'CME_MNQ1!,Sell,Stop,1,,17900.00,,Cancelled,,2026-03-05 19:00:00,2026-03-05 19:20:00,11102,,,',
+          'CME_MNQ1!,Buy,Market,1,,,18000.00,Filled,,2026-03-05 19:00:00,2026-03-05 19:00:00,11101,,20x,"500.00 USD"',
+        ),
+        balances: PV,
+        exportTime: EXPORT,
+      });
+      assert.deepEqual(fills.map(f => f.order_id), ['11101'], `price '${price}'`);
+      assert.deepEqual(skipped, [{ order_id: '11001', reason: 'missing or invalid fill price' }], `price '${price}'`);
+    }
+  });
+
+  it('skips a filled entry with a blank or whitespace quantity instead of drawing zero risk', () => {
+    for (const qty of ['', '  ']) {
+      const { fills, skipped } = buildFills({
+        orders: orders(
+          'CME_MINI:MES1!,Sell,Limit,1,5020.00,,,Cancelled,,2026-03-05 20:00:00,2026-03-05 20:20:00,12003,,,',
+          'CME_MINI:MES1!,Sell,Stop,1,,4990.00,,Cancelled,,2026-03-05 20:00:00,2026-03-05 20:20:00,12002,,,',
+          `CME_MINI:MES1!,Buy,Market,${qty},,,5000.00,Filled,,2026-03-05 20:00:00,2026-03-05 20:00:00,12001,,20x,"500.00 USD"`,
+        ),
+        balances: PV,
+        exportTime: EXPORT,
+      });
+      assert.deepEqual(fills, [], `qty '${qty}'`);
+      assert.deepEqual(skipped, [{ order_id: '12001', reason: 'missing or invalid quantity' }], `qty '${qty}'`);
+    }
+  });
+
   it('ignores a rejected entry and its bracket', () => {
     const { fills, skipped } = buildFills({
       orders: orders(
