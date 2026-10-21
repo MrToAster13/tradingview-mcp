@@ -275,12 +275,12 @@ function loadTemplates(templates, guards) {
 }
 const TPL = loadTemplates(TEMPLATES, { WRITE_GUARD, READ_GUARD });
 
-/** Runs fn(name, raw) for each of the five templates that templates.mjs defines. */
-function eachTemplate(fn) {
+/** Runs fn(name, raw) for each of the five templates in tpl. The mutation tests pass a changed copy of TPL. */
+function eachTemplate(fn, tpl = TPL) {
   const out = [];
-  if (!TPL) return out;
+  if (!tpl) return out;
   for (const name of TEMPLATE_NAMES) {
-    if (TPL.raw.has(name)) out.push(...fn(name, TPL.raw.get(name)));
+    if (tpl.raw.has(name)) out.push(...fn(name, tpl.raw.get(name)));
   }
   return out;
 }
@@ -553,12 +553,96 @@ function cdpMemberViolations() {
 
 /* ---------- templates.mjs lint bodies ---------- */
 
-function checkEachTemplate(fn) {
-  return eachTemplate((name, raw) => fn(name, raw, reduceLiterals(stripPlaceholders(raw))));
+function checkEachTemplate(fn, tpl = TPL) {
+  return eachTemplate((name, raw) => fn(name, raw, reduceLiterals(stripPlaceholders(raw))), tpl);
 }
 
-function templateIdentityArray(name, raw, rem) {
-  return identHits(rem).map((h) => tplViol(name, h.token, 'identifier not in the allowlist (design 127)'));
+/** One check per template lint. Each takes (name, raw, rem) and returns violations, so a test can run it on real or changed templates. */
+const TEMPLATE_CHECKS = {
+  wrapper(name, raw) {
+    const body = raw.trim();
+    return body.startsWith('(async () => {') && body.endsWith('})()') ? [] : [tplViol(name, name, 'wrapper must be (async () => { ... })() (design 134)')];
+  },
+  literal: (name, raw, rem) => literalHits(rem).map((h) => tplViol(name, h.token, 'literal or regex or comment not allowed (design 130)')),
+  ident: (name, raw, rem) => identHits(rem).map((h) => tplViol(name, h.token, 'identifier not in the allowlist (design 127)')),
+  forbidden(name, raw, rem) {
+    const hits = [...forbiddenHits(rem), ...rem.matchAll(/\?\./g)].map((h) => ({ token: h[0] ?? h.token, index: h.index, why: 'forbidden in templates (design 131)' }));
+    return hits.map((h) => tplViol(name, h.token, h.why));
+  },
+  operator: (name, raw, rem) => operatorHits(rem).map((h) => tplViol(name, h.token, h.why)),
+  member: (name, raw, rem) => memberHits(rem).map((h) => tplViol(name, h.token, h.why)),
+  loop: (name, raw, rem) => forHits(rem).map((h) => tplViol(name, h.token, h.why)),
+  binding(name, raw, rem) {
+    const out = [];
+    const bindings = bindingHits(rem);
+    for (const b of bindings) {
+      if (!LOCAL_NAMES.has(b.token)) out.push(tplViol(name, b.token, 'binding must use a local name (design 131)'));
+    }
+    const chartBindings = bindings.filter((b) => b.token === 'chart').length;
+    if (chartBindings !== 1) out.push(tplViol(name, 'chart', `chart bound ${chartBindings} times, must be once (design 134)`));
+    if (raw.split(CHART_DECL).length - 1 !== 1) out.push(tplViol(name, CHART_DECL, 'exact chart declaration missing or repeated (design 134)'));
+    return out;
+  },
+  write: (name, raw, rem) => writeHits(name, rem).map((h) => tplViol(name, h.token, h.why)),
+  wait(name, raw, rem) {
+    const out = [];
+    const want = name === 'draw_trade' ? 1 : 0;
+    for (const word of ['setTimeout', 'Promise']) {
+      const count = wordHits(rem, word).length;
+      if (count !== want) out.push(tplViol(name, word, `${word} appears ${count} times, expected ${want} (design 127)`));
+    }
+    if (name === 'draw_trade') {
+      const waits = raw.split(WAIT_TEXT).length - 1;
+      if (waits !== 1) out.push(tplViol(name, WAIT_TEXT, `step-8 wait appears ${waits} times, expected 1 (design 134)`));
+      const arrows = (rem.match(/=>/g) || []).length;
+      if (arrows !== 2) out.push(tplViol(name, '=>', `${arrows} arrows, expected 2: the wrapper and the step-8 wait (design 134)`));
+      const at = raw.indexOf(WAIT_TEXT);
+      if (at !== -1 && !/catch\s*\(\s*[A-Za-z_$][\w$]*\s*\)\s*\{[\s\S]*$/.test(raw.slice(0, at))) {
+        out.push(tplViol(name, WAIT_TEXT, 'step-8 wait must sit inside a catch branch (design 134)'));
+      }
+    }
+    return out;
+  },
+};
+
+function presenceViolations(templates, tpl = TPL) {
+  const out = [...TEMPLATE_NAMES, ...GUARD_NAMES]
+    .filter((n) => !tpl.raw.has(n))
+    .map((n) => tplViol(n, n, 'not exported by templates.mjs as a string'));
+  for (const n of Object.keys(templates)) {
+    if (!TEMPLATE_NAMES.includes(n)) out.push(tplViol(n, n, 'TEMPLATES holds a name outside the five templates (design 127)'));
+  }
+  if (!Object.isFrozen(templates)) out.push(tplViol('TEMPLATES', 'Object.freeze', 'TEMPLATES must be frozen (design 127)'));
+  return out;
+}
+
+function readGuardViolations(tpl = TPL) {
+  const out = [];
+  const write = tpl.raw.get('WRITE_GUARD');
+  const read = tpl.raw.get('READ_GUARD');
+  if (write !== undefined && !write.includes('Date.now() < @@DEADLINE@@')) {
+    out.push(tplViol('WRITE_GUARD', 'Date.now() < @@DEADLINE@@', 'missing deadline check (design 134)'));
+  }
+  if (read !== undefined) {
+    for (const n of ['identity', 'read_history', 'read_shapes']) {
+      if (tpl.raw.has(n) && !tpl.raw.get(n).includes(read)) out.push(tplViol(n, 'READ_GUARD', 'read template must contain READ_GUARD text (design 134)'));
+    }
+  }
+  return out;
+}
+
+function placeholderFormViolations(tpl = TPL) {
+  return [...TEMPLATE_NAMES, ...GUARD_NAMES]
+    .filter((n) => tpl.raw.has(n))
+    .filter((n) => tpl.raw.get(n).replace(/@@[A-Z_]+@@/g, '').includes('@'))
+    .map((n) => tplViol(n, '@', 'placeholder must be @@UPPER_CASE@@ (design 125)'));
+}
+
+/** A copy of TPL with one entry replaced, for the mutation tests. */
+function withTemplate(name, text) {
+  const raw = new Map(TPL.raw);
+  raw.set(name, text);
+  return { text: TPL.text, raw };
 }
 
 /* ---------- self-tests of the scanners (design 123, 127, 130, 131) ---------- */
@@ -662,75 +746,52 @@ describe('cdp.mjs lints (design 123, 135)', () => {
 describe('templates.mjs lints (design 125, 127 to 134)', () => {
   test('templates.mjs defines the five templates and both guard texts (design 127, 136)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    const out = [...TEMPLATE_NAMES, ...GUARD_NAMES]
-      .filter((n) => !TPL.raw.has(n))
-      .map((n) => tplViol(n, n, 'not exported by templates.mjs as a string'));
-    for (const n of Object.keys(TEMPLATES)) {
-      if (!TEMPLATE_NAMES.includes(n)) out.push(tplViol(n, n, 'TEMPLATES holds a name outside the five templates (design 127)'));
-    }
-    if (!Object.isFrozen(TEMPLATES)) out.push(tplViol('TEMPLATES', 'Object.freeze', 'TEMPLATES must be frozen (design 127)'));
-    report(out);
+    report(presenceViolations(TEMPLATES));
   });
 
   test('each template is (async () => { ... })() (design 134)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(eachTemplate((name, raw) => {
-      const body = raw.trim();
-      return body.startsWith('(async () => {') && body.endsWith('})()') ? [] : [tplViol(name, name, 'wrapper must be (async () => { ... })() (design 134)')];
-    }));
+    report(eachTemplate(TEMPLATE_CHECKS.wrapper));
   });
 
   test('literal-free check: after allowed literals, no quote, slash, backslash, backtick or @ (design 130)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => literalHits(rem).map((h) => tplViol(name, h.token, 'literal or regex or comment not allowed (design 130)'))));
+    report(checkEachTemplate(TEMPLATE_CHECKS.literal));
   });
 
   test('every identifier is on the allowlist (design 127)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => templateIdentityArray(name, raw, rem)));
+    report(checkEachTemplate(TEMPLATE_CHECKS.ident));
   });
 
   test('forbidden names and tokens (design 131)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => {
-      const hits = [...forbiddenHits(rem), ...rem.matchAll(/\?\./g)].map((h) => ({ token: h[0] ?? h.token, index: h.index, why: 'forbidden in templates (design 131)' }));
-      return hits.map((h) => tplViol(name, h.token, h.why));
-    }));
+    report(checkEachTemplate(TEMPLATE_CHECKS.forbidden));
   });
 
   test('assignment and operator rules (design 131)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => operatorHits(rem).map((h) => tplViol(name, h.token, h.why))));
+    report(checkEachTemplate(TEMPLATE_CHECKS.operator));
   });
 
   test('computed member access only [<digits>] (design 131)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => memberHits(rem).map((h) => tplViol(name, h.token, h.why))));
+    report(checkEachTemplate(TEMPLATE_CHECKS.member));
   });
 
   test('every for is for ( const <local name> of (design 131)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => forHits(rem).map((h) => tplViol(name, h.token, h.why))));
+    report(checkEachTemplate(TEMPLATE_CHECKS.loop));
   });
 
   test('every binding is a local name and chart is declared once with the exact text (design 131, 134)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => {
-      const out = [];
-      const bindings = bindingHits(rem);
-      for (const b of bindings) {
-        if (!LOCAL_NAMES.has(b.token)) out.push(tplViol(name, b.token, 'binding must use a local name (design 131)'));
-      }
-      const chartBindings = bindings.filter((b) => b.token === 'chart').length;
-      if (chartBindings !== 1) out.push(tplViol(name, 'chart', `chart bound ${chartBindings} times, must be once (design 134)`));
-      if (raw.split(CHART_DECL).length - 1 !== 1) out.push(tplViol(name, CHART_DECL, 'exact chart declaration missing or repeated (design 134)'));
-      return out;
-    }));
+    report(checkEachTemplate(TEMPLATE_CHECKS.binding));
   });
 
   test('write members only in draw_trade, only as chart.<member>( (design 128)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => writeHits(name, rem).map((h) => tplViol(name, h.token, h.why))));
+    report(checkEachTemplate(TEMPLATE_CHECKS.write));
   });
 
   test('draw_trade: one createShape and one createMultipointShape, each after the exact WRITE_GUARD statement with no await (design 134)', (t) => {
@@ -743,49 +804,17 @@ describe('templates.mjs lints (design 125, 127 to 134)', () => {
 
   test('draw_trade: one step-8 wait inside catch; arrows only in wrapper and wait; setTimeout and Promise only there (design 127, 134)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report(checkEachTemplate((name, raw, rem) => {
-      const out = [];
-      const want = name === 'draw_trade' ? 1 : 0;
-      for (const word of ['setTimeout', 'Promise']) {
-        const count = wordHits(rem, word).length;
-        if (count !== want) out.push(tplViol(name, word, `${word} appears ${count} times, expected ${want} (design 127)`));
-      }
-      if (name === 'draw_trade') {
-        const waits = raw.split(WAIT_TEXT).length - 1;
-        if (waits !== 1) out.push(tplViol(name, WAIT_TEXT, `step-8 wait appears ${waits} times, expected 1 (design 134)`));
-        const arrows = (rem.match(/=>/g) || []).length;
-        if (arrows !== 2) out.push(tplViol(name, '=>', `${arrows} arrows, expected 2: the wrapper and the step-8 wait (design 134)`));
-        const at = raw.indexOf(WAIT_TEXT);
-        if (at !== -1 && !/catch\s*\(\s*[A-Za-z_$][\w$]*\s*\)\s*\{[\s\S]*$/.test(raw.slice(0, at))) {
-          out.push(tplViol(name, WAIT_TEXT, 'step-8 wait must sit inside a catch branch (design 134)'));
-        }
-      }
-      return out;
-    }));
+    report(checkEachTemplate(TEMPLATE_CHECKS.wait));
   });
 
   test('read templates use READ_GUARD; WRITE_GUARD checks the deadline (design 134)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    const out = [];
-    const write = TPL.raw.get('WRITE_GUARD');
-    const read = TPL.raw.get('READ_GUARD');
-    if (write !== undefined && !write.includes('Date.now() < @@DEADLINE@@')) {
-      out.push(tplViol('WRITE_GUARD', 'Date.now() < @@DEADLINE@@', 'missing deadline check (design 134)'));
-    }
-    if (read !== undefined) {
-      for (const n of ['identity', 'read_history', 'read_shapes']) {
-        if (TPL.raw.has(n) && !TPL.raw.get(n).includes(read)) out.push(tplViol(n, 'READ_GUARD', 'read template must contain READ_GUARD text (design 134)'));
-      }
-    }
-    report(out);
+    report(readGuardViolations());
   });
 
   test('placeholders are @@UPPER_CASE@@ only, and nothing else in templates uses @ (design 125)', (t) => {
     if (!TPL) return t.skip('templates.mjs is not built yet');
-    report([...TEMPLATE_NAMES, ...GUARD_NAMES]
-      .filter((n) => TPL.raw.has(n))
-      .filter((n) => TPL.raw.get(n).replace(/@@[A-Z_]+@@/g, '').includes('@'))
-      .map((n) => tplViol(n, '@', 'placeholder must be @@UPPER_CASE@@ (design 125)')));
+    report(placeholderFormViolations());
   });
 
   test('templates.mjs freezes its exports and has no get, set, Proxy or Map (design 125)', (t) => {
@@ -796,5 +825,78 @@ describe('templates.mjs lints (design 125, 127 to 134)', () => {
       for (const at of wordHits(TPL.text, word)) out.push(fileViol('templates.mjs', TPL.text, at, word, 'not allowed in templates.mjs (design 125)'));
     }
     report(out);
+  });
+});
+
+/* ---------- the lints are not vacuous: each one fails on a changed copy ---------- */
+
+describe('lint mutation tests', () => {
+  // The template lints once scanned templates.mjs for backtick strings, found none, and passed on any template.
+  // These tests feed each check the real text, then a copy with one bad statement after the chart declaration.
+  const BASE = 'identity';
+  const insert = (stmt) => TPL.raw.get(BASE).replace(CHART_DECL, `${CHART_DECL} ${stmt}`);
+  const hitsOn = (check, tpl) => checkEachTemplate(check, tpl).filter((v) => v.where === BASE).length;
+
+  test('every template lint sees the five real templates and both guards', () => {
+    for (const n of [...TEMPLATE_NAMES, ...GUARD_NAMES]) {
+      assert.equal(TPL.raw.get(n), Object.hasOwn(TEMPLATES, n) ? TEMPLATES[n] : { WRITE_GUARD, READ_GUARD }[n], `${n} is not the exported string`);
+      assert.ok(TPL.raw.get(n).length > 20, `${n} is empty or too short to be a template`);
+    }
+    assert.ok(TPL.raw.get(BASE).includes(CHART_DECL), 'the base template has no chart declaration to insert after');
+    assert.deepEqual(eachTemplate((name) => [name]), TEMPLATE_NAMES);
+  });
+
+  const cases = [
+    ['literal', "return 'x';"],
+    ['ident', 'return zzz;'],
+    ['forbidden', 'return window;'],
+    ['operator', 'chart += 1;'],
+    ['member', 'return chart[chart];'],
+    ['loop', 'for (let i = 0; i < 1; i) {}'],
+    ['binding', 'const zzz = 1;'],
+    ['write', 'chart.createShape(1);'],
+    ['wait', 'setTimeout(1);'],
+  ];
+  for (const [check, stmt] of cases) {
+    test(`the ${check} check passes ${BASE} and fails it after inserting ${stmt}`, () => {
+      assert.equal(hitsOn(TEMPLATE_CHECKS[check], TPL), 0, `${check} already fails on the real ${BASE}`);
+      assert.ok(hitsOn(TEMPLATE_CHECKS[check], withTemplate(BASE, insert(stmt))) > 0, `${check} did not catch ${stmt}`);
+    });
+  }
+
+  test('the binding check fails a second chart declaration, and the wrapper check a trailing statement', () => {
+    assert.ok(hitsOn(TEMPLATE_CHECKS.binding, withTemplate(BASE, insert(CHART_DECL))) > 0);
+    assert.equal(eachTemplate(TEMPLATE_CHECKS.wrapper, withTemplate(BASE, `${TPL.raw.get(BASE)};`)).length, 1);
+  });
+
+  test('the presence check fails a missing template, an extra name and an unfrozen object', () => {
+    const missing = { raw: new Map([...TPL.raw].filter(([n]) => n !== 'discover')) };
+    assert.deepEqual(presenceViolations(TEMPLATES, missing).map((v) => v.where), ['discover']);
+    const extra = { ...TEMPLATES, other: TEMPLATES.identity };
+    assert.deepEqual(presenceViolations(extra).map((v) => v.where), ['other', 'TEMPLATES']);
+  });
+
+  test('the guard checks fail a read template without READ_GUARD and a write guard without the deadline', () => {
+    const read = TPL.raw.get('READ_GUARD');
+    assert.deepEqual(readGuardViolations(withTemplate(BASE, TPL.raw.get(BASE).split(read).join('true'))).map((v) => v.where), [BASE]);
+    assert.deepEqual(readGuardViolations(withTemplate('WRITE_GUARD', 'true')).map((v) => v.where), ['WRITE_GUARD']);
+    const draw = TPL.raw.get('draw_trade');
+    const guard = TPL.raw.get('WRITE_GUARD');
+    const stmt = `if (!(${guard})) { return "E_GUARD"; }`;
+    assert.ok(draw.includes(stmt), 'draw_trade has no WRITE_GUARD statement to change');
+    assert.ok(guardHits(draw.split(stmt).join(`${stmt} await null;`), guard).length > 0);
+  });
+
+  test('the placeholder form check fails a lower-case placeholder', () => {
+    assert.deepEqual(placeholderFormViolations(withTemplate(BASE, insert('return @@lower@@;'))).map((v) => v.where), [BASE]);
+  });
+
+  test('the client lint fails an alias and a client passed as an argument', () => {
+    const text = SOURCE.get('cdp.mjs');
+    assert.deepEqual(cdpClientViolations(text), []);
+    const alias = `${text}\nconst held = client1;\n`;
+    assert.deepEqual(cdpClientViolations(alias).map((v) => v.token), ['client1']);
+    const passed = `${text}\nkeep(candidate);\n`;
+    assert.deepEqual(cdpClientViolations(passed).map((v) => v.token), ['candidate']);
   });
 });
