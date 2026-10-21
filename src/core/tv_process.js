@@ -32,7 +32,7 @@ export function isTvRunning({ execSync = _execSync, platform = process.platform 
   }
 }
 
-/** GET http://<host>:<port>/json/version. Resolves the body on HTTP 200, else null. */
+/** GET http://<host>:<port>/json/version. Resolves the body ('' if empty) on HTTP 200, else null. */
 export function probeCdp(port, host = LOCAL) {
   return new Promise((done) => {
     const req = http.request(`http://${host}:${port}/json/version`, { timeout: 2000, agent: false }, (res) => {
@@ -62,7 +62,7 @@ export async function ensureTradingView({ port, _deps } = {}) {
   const probe = _deps?.probeCdp || probeCdp;
   const running = _deps?.isTvRunning || (() => isTvRunning());
   const delay = _deps?.delay || ((ms) => new Promise((r) => setTimeout(r, ms)));
-  const cdpUp = async () => !!(await probe(port, LOCAL));
+  const cdpUp = async () => (await probe(port, LOCAL)) != null;
 
   let up = await cdpUp();
   if (!up && await running()) {

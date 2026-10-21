@@ -10,7 +10,7 @@ Two copies of "is TradingView running" existed. `scripts/tv_up.js` had an async 
 
 - `src/core/tv_process.js` owns bring-up. It exports `isTvRunning({ execSync, platform })`, `probeCdp(port, host)` and `ensureTradingView({ port, _deps })`.
 - `isTvRunning` is the fail-closed version from health.js. `launch()` in health.js and `tv_up.js` both use it. tv_up therefore now refuses, rather than launches, when the process check itself fails.
-- `probeCdp` is tv_up's probe: `/json/version`, 2 second timeout, body only on HTTP 200. health.js keeps its upstream `_probeCdp` (any status) for `_waitForCdp`, so the upstream launch path is unchanged.
+- `probeCdp` is tv_up's probe: `/json/version`, 2 second timeout. It resolves the body on HTTP 200, even an empty one, and null otherwise, so any 200 counts as up as it did in tv_up. health.js keeps its upstream `_probeCdp` (any status) for `_waitForCdp`, so the upstream launch path is unchanged.
 - `ensureTradingView` returns `{ state: 'up' }` or `{ state: 'launched', ready, warning }`, and throws the "running without CDP" refusal or "launch failed: ...". It loads `launch` from health.js with a dynamic import, because health.js imports tv_process.js.
 - `tv_up.js` step 2 calls `ensureTradingView` and only maps the result to log lines.
 

@@ -125,6 +125,14 @@ describe('probeCdp()', () => {
     try { assert.equal(await probeCdp(srv.port), '{"Browser":"TradingView"}'); } finally { await srv.close(); }
   });
 
+  it('returns an empty string on HTTP 200 with no body, which counts as up', async () => {
+    const srv = await serve(200, '');
+    try { assert.equal(await probeCdp(srv.port), ''); } finally { await srv.close(); }
+    const { _deps } = fakes();
+    _deps.probeCdp = async () => '';
+    assert.deepEqual(await ensureTradingView({ port: 9222, _deps }), { state: 'up' });
+  });
+
   it('returns null on a non-200 status', async () => {
     const srv = await serve(500, 'nope');
     try { assert.equal(await probeCdp(srv.port), null); } finally { await srv.close(); }
