@@ -1,4 +1,4 @@
-# Handoff 002: tv_up no-kill fix merged, eight open questions
+# Handoff 002: tv_up no-kill fix merged, six open questions
 
 Status: in-progress (fixing the audit follow-ups on fix/bool-params-and-kill-scope; the open questions still wait on Elijah)
 
@@ -48,18 +48,18 @@ Known gap, documented and not fixed: if Elijah opens TradingView during the CDP 
 - `scripts/tv_up.js` holds the bring-up steps: key, CDP 9222, HTTP 127.0.0.1:8765, Funnel :8443.
 - `src/core/health.js` has `launch()` and the MSIX fallback kill guard.
 - `src/core/trades.js` and `src/core/drawing.js` hold the trade bracket linking and the drawing dedupe.
-- `src/tools/health.js:24` has the `z.coerce.boolean()` follow-up.
+- `src/tools/_params.js` holds the strict `bool` schema that replaced `z.coerce.boolean()` (fixed in bcaec23).
 - `scripts/mc_basic_1m/fwd_run.sh`, `fwd_snap.mjs` and `fwd_eval.mjs` run the forward check-in. They need layout tab 1 on `CME_MINI:MES1!|15`.
 - `%TEMP%\mc_fwd\snap_20261020_2026.txt` is the failed rerun log.
 
 ## Gotchas
 - Never run `npm test`, `test:all` or `test:e2e` while TradingView is open, because they wipe the live chart. Use `npm run test:unit`.
 - Never run `scripts\launch_tv_debug.bat` and never kill TradingView.
+- bcaec23 fixed the boolean coercion, the name-based fallback kill, the zero stop or target, and the blank replay quantity.
 - Follow-ups not fixed yet:
-  - `tv_launch` coerces the string "false" to true for `kill_existing`.
-  - The fallback kills by image name, not PID.
-  - A stop or target of 0 is accepted.
-  - A blank quantity counts as 0 in the replay.
   - Nobody has verified that exports fill in Level ID.
+  - `planPosition` in `src/core/trades.js` uses `Math.abs`, so a stop on the wrong side of entry, or equal to it, is drawn as a mirrored bracket or with 0 ticks. This predates bcaec23. The audit found it.
+  - The PID kill closes Elijah's window if Electron's single-instance lock handed it to our process.
+  - The launch_tv_debug scripts kill by name with no check.
 - The committed HTML reports on backtest/mc-basic-1m still show the old $3 fee.
 - `e.txt` and `o.txt` in the repo root are scratch files and stay uncommitted.
