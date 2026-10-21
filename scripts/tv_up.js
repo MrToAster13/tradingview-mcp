@@ -24,13 +24,12 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { validateApiKey, DEFAULT_HTTP_PORT } from '../src/http.js';
 import { launch, envWithoutElectronRunAsNode } from '../src/core/health.js';
+import { ensureTradingView, isTvRunning, probeCdp } from '../src/core/tv_process.js';
 
 const FUNNEL_PORT = 8443;
 const LOCAL = '127.0.0.1';
 const HEALTH_WAIT_TRIES = 30;
 const HEALTH_WAIT_MS = 500;
-const CDP_RETRY_TRIES = 5;
-const CDP_RETRY_MS = 2000;
 const SERVER_JS = join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'server.js');
 
 const KEY_HELP = [
@@ -88,21 +87,6 @@ function httpRequest(url, { method = 'GET', headers = {}, body, timeoutMs = 2000
 
 const execFileP = promisify(execFile);
 
-async function isTvRunning() {
-  try {
-    if (process.platform === 'win32') {
-      const { stdout } = await execFileP('tasklist', ['/FI', 'IMAGENAME eq TradingView.exe', '/NH'], { windowsHide: true });
-      return /TradingView\.exe/i.test(stdout);
-    }
-    // Exact process-name match; -f would also match this repo's own path.
-    const name = process.platform === 'darwin' ? 'TradingView' : 'tradingview';
-    await execFileP('pgrep', process.platform === 'darwin' ? ['-x', name] : ['-i', '-x', name]);
-    return true;
-  } catch {
-    return false; // pgrep exits 1 when nothing matches
-  }
-}
-
 function spawnHttpServer({ env }) {
   const child = spawn(process.execPath, [SERVER_JS, '--http'], {
     detached: true, stdio: 'ignore', env, windowsHide: true,
@@ -118,7 +102,8 @@ async function tailscale(args) {
 const defaultDeps = {
   log: (line) => console.log(line),
   httpRequest,
-  isTvRunning,
+  probeCdp,
+  isTvRunning: () => isTvRunning(),
   launch,
   spawnHttpServer,
   tailscale,
@@ -193,36 +178,21 @@ export async function tvUp({ env = process.env, argv = [], _deps } = {}) {
     // 2. TradingView with CDP
     step = '2/5 cdp';
     const cdpPort = cdpPortFrom(env);
-    const cdpUrl = `http://${LOCAL}:${cdpPort}/json/version`;
-    const cdpUp = async () => { const r = await deps.httpRequest(cdpUrl); return !!r && r.status === 200; };
-    let up = await cdpUp();
-    if (!up && await deps.isTvRunning()) {
-      // TradingView is running. A single probe can stall past its timeout, so
-      // retry before deciding. Never launch here: launch() would kill it.
-      for (let i = 0; i < CDP_RETRY_TRIES && !up; i++) {
-        await deps.delay(CDP_RETRY_MS);
-        up = await cdpUp();
-      }
-      if (!up) {
-        throw new StepError(`TradingView is running without CDP on ${LOCAL}:${cdpPort} (no answer within ${(CDP_RETRY_TRIES * CDP_RETRY_MS) / 1000}s). Not killing it. Close TradingView yourself and re-run (or start it with --remote-debugging-port=${cdpPort}).`);
-      }
+    let tv;
+    try {
+      tv = await ensureTradingView({
+        port: cdpPort,
+        _deps: { probeCdp: deps.probeCdp, isTvRunning: deps.isTvRunning, launch: deps.launch, delay: deps.delay },
+      });
+    } catch (err) {
+      throw new StepError(err.message);
     }
-    if (up) {
+    if (tv.state === 'up') {
       log(`${step}: TradingView already answering on ${LOCAL}:${cdpPort}`);
+    } else if (tv.ready) {
+      log(`${step}: launched TradingView, CDP answering on ${LOCAL}:${cdpPort}`);
     } else {
-      // No TradingView process. kill_existing: false so launch() skips its
-      // up-front kill of any TradingView started since the check above.
-      let result;
-      try {
-        result = await deps.launch({ port: cdpPort, kill_existing: false });
-      } catch (err) {
-        throw new StepError(`launch failed: ${err.message}`);
-      }
-      if (await cdpUp()) {
-        log(`${step}: launched TradingView, CDP answering on ${LOCAL}:${cdpPort}`);
-      } else {
-        log(`${step}: launched TradingView, but CDP not answering yet on ${LOCAL}:${cdpPort}${result?.warning ? ` (${result.warning})` : ''}`);
-      }
+      log(`${step}: launched TradingView, but CDP not answering yet on ${LOCAL}:${cdpPort}${tv.warning ? ` (${tv.warning})` : ''}`);
     }
 
     // 3. HTTP MCP server

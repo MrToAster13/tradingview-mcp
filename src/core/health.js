@@ -5,6 +5,7 @@ import { getClient, getTargetInfo, evaluate, CDP_HOST, CDP_PORT } from '../conne
 import { existsSync, cpSync, rmSync, readdirSync } from 'fs';
 import { execSync, spawn } from 'child_process';
 import { dirname, basename, join } from 'path';
+import { isTvRunning } from './tv_process.js';
 
 // Best-effort git-pull update check: compare local HEAD to origin's default
 // branch on GitHub. Never throws — returns null on any failure (offline,
@@ -213,29 +214,8 @@ function _resolveLaunchDeps(deps) {
     probeCdp: deps?.probeCdp || _probeCdp,
     processKill: deps?.processKill || ((pid, sig) => process.kill(pid, sig)),
   };
-  resolved.isTvRunning = deps?.isTvRunning || (() => _isTvRunning(resolved.execSync));
+  resolved.isTvRunning = deps?.isTvRunning || (() => isTvRunning({ execSync: resolved.execSync }));
   return resolved;
-}
-
-/**
- * Whether a TradingView process is running. A check that cannot run counts
- * as running, so callers that must not kill a user's TradingView refuse.
- */
-function _isTvRunning(execSyncFn, platform = process.platform) {
-  if (platform === 'win32') {
-    try {
-      const out = execSyncFn('tasklist /FI "IMAGENAME eq TradingView.exe" /NH', { timeout: 5000, windowsHide: true }).toString();
-      return /TradingView\.exe/i.test(out);
-    } catch { return true; }
-  }
-  // Exact process-name match; -f would also match this repo's own path.
-  const cmd = platform === 'darwin' ? 'pgrep -x TradingView' : 'pgrep -i -x tradingview';
-  try {
-    execSyncFn(cmd, { timeout: 5000, stdio: 'ignore' });
-    return true;
-  } catch (e) {
-    return e?.status !== 1; // pgrep exits 1 when nothing matches
-  }
 }
 
 async function _probeCdp(cdpPort) {
