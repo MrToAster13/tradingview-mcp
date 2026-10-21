@@ -44,6 +44,9 @@ if "%TV_EXE%"=="" (
 
 echo Found TradingView at: %TV_EXE%
 echo Starting with --remote-debugging-port=%PORT%...
+REM Claude Code / T3 Code set ELECTRON_RUN_AS_NODE=1. If TradingView inherits it,
+REM Electron runs as plain Node and exits with "bad option: --remote-debugging-port".
+set ELECTRON_RUN_AS_NODE=
 start "" "%TV_EXE%" --remote-debugging-port=%PORT%
 
 echo Waiting for CDP to become available...
