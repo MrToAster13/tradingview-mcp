@@ -1,6 +1,6 @@
 # Handoff 002: tv_up no-kill fix merged, eight open questions
 
-Status: blocked (waiting on Elijah's answers to the questions below)
+Status: in-progress (fixing the audit follow-ups on fix/bool-params-and-kill-scope; the open questions still wait on Elijah)
 
 ## Goal
 Elijah asked to work every ticket and task that could be done without him, using subagents, and to commit the uncommitted work. The pieces were Caddy after reboot, whether Tailscale Funnel is on, why the 10-19 and 10-20 forward check-ins produced nothing, and landing the feat/draw-trades-from-csv work. Usage limits are close, so run at most one subagent at a time, Haiku unless the step needs Opus.
@@ -16,10 +16,17 @@ Elijah asked to work every ticket and task that could be done without him, using
 - Funnel is on. `/mcp` returns 401 without the key. `/health` returns 200 "ok" with no auth.
 - The check-ins never ran because they were in-session timers in a session that ended. A manual rerun failed with "tab 1 (CME_MINI:MES1! 15m) not found" because the layout reopened on CBOT:ZC1! 15m. I didn't change the live chart.
 
+## In flight
+Elijah said resume, and the audit and fix rule says to pick the safest option, so I'm fixing the question 6 follow-ups myself. Each fix makes the code refuse more. The work is on branch `fix/bool-params-and-kill-scope`, off fork/main 8ee5660, in worktree `../tvmcp-fix`. `node_modules` there is a junction to the main checkout's copy. Delete it with `.Delete()` before `git worktree remove`.
+- Haiku A: a shared strict boolean param that rejects anything other than true, false, "true", "false", "1" and "0", replacing all 8 `z.coerce.boolean()` uses in `src/tools/` (alerts, data x4, health, indicators, ui). With coercion, `delete_all: "false"` deletes every alert.
+- Haiku B: `src/core/trades.js` skips a stop or target that isn't positive. A Filled row with a blank or invalid quantity skips every entry on that symbol, because the exit replay would be wrong.
+- Opus: when `kill_existing` is false, the `src/core/health.js` MSIX fallback kills only the child it spawned, by PID, never by image name.
+
 ## Next (in order)
-1. Wait for Elijah's reply to the questions below. The format is one letter per number, like `1a 2a 3a 4a 5b 6a`.
-2. Act on each answer, one subagent at a time. Update this doc after each step.
-3. Rebasing backtest/mc-basic-1m onto fork/main 8ee5660 is optional and has not been done.
+1. Collect the three agents' results, then run `npm run test:unit` in the worktree.
+2. Opus audit of the whole branch, including the handoff commit. Fix and re-audit until it comes back clean.
+3. Push to `fork`, open a PR, link it, merge, and remove the worktree.
+4. Then stop and wait on the open questions below.
 
 ## Open questions for Elijah
 1. package-lock.json drift with no package.json change: (a) discard or (b) commit.
@@ -27,7 +34,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 3. Funnel: (a) keep it on and put `/health` behind the key, (b) keep it on as is, or (c) go tailnet-only, which breaks Hermes until Hermes moves to the tailnet.
 4. Forward check-ins: (a) switch the chart to MES1! 15m (or allow me to), run now, and schedule twice a day with T3 `schedule_task`, (b) run once, or (c) drop the forward test.
 5. backtest/mc-basic-1m: (a) keep it local, (b) move the home path and layout id into env vars, regenerate the reports at the $1 fee, re-audit and push, or (c) push it to a private repo.
-6. Follow-ups the audit moved out of the PR: (a) fix them now or (b) leave them documented.
+6. Follow-ups: being fixed now (see In flight). The rest stay documented: the launch_tv_debug scripts kill unconditionally, and nobody has verified Level ID in exports.
 
 ## Key decisions
 - Never push backtest/mc-basic-1m to the public fork as it stands, because commit 6aa97f4 says "do not push". `scripts/mc_basic_1m/store.mjs:11` has a home path, and `cdp.mjs:14-15`, `templates.mjs:21` and `lint.test.mjs` have the layout id.
