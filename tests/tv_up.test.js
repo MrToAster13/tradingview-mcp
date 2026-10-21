@@ -38,10 +38,6 @@ function world({
     log: (line) => { s.lines.push(line); s.calls.push(`log:${line}`); },
     httpRequest: async (url, opts = {}) => {
       s.calls.push(`http:${opts.method || 'GET'} ${url}`);
-      if (url.endsWith('/json/version')) {
-        if (s.cdpStalls > 0) { s.cdpStalls--; return null; }
-        return s.cdpUp ? { status: 200, body: '{"Browser":"x"}' } : null;
-      }
       if (url.endsWith('/health')) return s.httpUp ? { status: 200, body: 'ok' } : null;
       if (url.endsWith('/mcp')) {
         if (!s.httpUp) return null;
@@ -49,6 +45,11 @@ function world({
         return { status: ok ? 406 : 401, body: '' };
       }
       throw new Error(`unexpected url ${url}`);
+    },
+    probeCdp: async (port, host) => {
+      s.calls.push(`http:GET http://${host}:${port}/json/version`);
+      if (s.cdpStalls > 0) { s.cdpStalls--; return null; }
+      return s.cdpUp ? '{"Browser":"x"}' : null;
     },
     isTvRunning: async () => { s.calls.push('isTvRunning'); return s.tvRunning; },
     launch: async (opts) => {
