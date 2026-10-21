@@ -415,7 +415,51 @@ describe('buildFills()', () => {
         exportTime: EXPORT,
       });
       assert.deepEqual(fills, [], `qty '${qty}'`);
-      assert.deepEqual(skipped, [{ order_id: '12001', reason: 'missing or invalid quantity' }], `qty '${qty}'`);
+      assert.deepEqual(skipped, [{ order_id: '12001', reason: 'invalid quantity in order history' }], `qty '${qty}'`);
+    }
+  });
+
+  it('skips an entry whose stop or target is zero or negative', () => {
+    for (const [stop, target] of [['0.00', '5020.00'], ['-4990.00', '5020.00'], ['4990.00', '0.00']]) {
+      const { fills, skipped } = buildFills({
+        orders: orders(
+          `CME_MINI:MES1!,Sell,Limit,1,${target},,,Cancelled,,2026-03-05 21:00:00,2026-03-05 21:20:00,13003,,,`,
+          `CME_MINI:MES1!,Sell,Stop,1,,${stop},,Cancelled,,2026-03-05 21:00:00,2026-03-05 21:20:00,13002,,,`,
+          'CME_MINI:MES1!,Buy,Market,1,,,5000.00,Filled,,2026-03-05 21:00:00,2026-03-05 21:00:00,13001,,20x,"500.00 USD"',
+        ),
+        balances: PV,
+        exportTime: EXPORT,
+      });
+      assert.deepEqual(fills, [], `stop ${stop}, target ${target}`);
+      assert.deepEqual(skipped, [{ order_id: '13001', reason: 'missing or invalid bracket price' }], `stop ${stop}, target ${target}`);
+    }
+  });
+
+  it('skips every entry on a symbol with a Filled row that has no quantity, and no other symbol', () => {
+    for (const qty of ['', '  ', '0', '-1']) {
+      const { fills, skipped } = buildFills({
+        orders: orders(
+          'CME_MNQ1!,Sell,Limit,1,18100.00,,18100.00,Filled,,2026-03-05 23:00:00,2026-03-05 23:20:00,14103,,,',
+          'CME_MNQ1!,Sell,Stop,1,,17900.00,,Cancelled,,2026-03-05 23:00:00,2026-03-05 23:20:00,14102,,,',
+          'CME_MNQ1!,Buy,Market,1,,,18000.00,Filled,,2026-03-05 23:00:00,2026-03-05 23:00:00,14101,,20x,"500.00 USD"',
+          'CME_MES1!,Sell,Limit,1,5030.00,,,Cancelled,,2026-03-05 22:30:00,2026-03-05 22:50:00,14006,,,',
+          'CME_MES1!,Sell,Stop,1,,4995.00,,Cancelled,,2026-03-05 22:30:00,2026-03-05 22:50:00,14005,,,',
+          'CME_MES1!,Buy,Market,1,,,5001.00,Filled,,2026-03-05 22:30:00,2026-03-05 22:30:00,14004,,20x,"500.00 USD"',
+          `CME_MES1!,Sell,Market,${qty},,,5010.00,Filled,,2026-03-05 22:10:00,2026-03-05 22:10:00,14007,,,`,
+          'CME_MES1!,Sell,Limit,1,5020.00,,,Cancelled,,2026-03-05 22:00:00,2026-03-05 22:20:00,14003,,,',
+          'CME_MES1!,Sell,Stop,1,,4990.00,,Cancelled,,2026-03-05 22:00:00,2026-03-05 22:20:00,14002,,,',
+          'CME_MES1!,Buy,Market,1,,,5000.00,Filled,,2026-03-05 22:00:00,2026-03-05 22:00:00,14001,,20x,"500.00 USD"',
+        ),
+        balances: PV,
+        exportTime: EXPORT,
+      });
+      assert.deepEqual(fills.map(f => [f.order_id, f.symbol, f.exit_time]), [
+        ['14101', 'CME_MNQ1!', T('2026-03-05 23:20:00')],
+      ], `qty '${qty}'`);
+      assert.deepEqual(skipped, [
+        { order_id: '14001', reason: 'invalid quantity in order history' },
+        { order_id: '14004', reason: 'invalid quantity in order history' },
+      ], `qty '${qty}'`);
     }
   });
 
