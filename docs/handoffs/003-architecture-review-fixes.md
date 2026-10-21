@@ -32,8 +32,11 @@ Domain terms for both are in `CONTEXT.md`.
 - tv-2 (mc_basic_1m chart session wiring) is on a local backtest branch in its own worktree. That work stays off the public fork, so this branch does not carry it.
 - `scripts/launch_tv_debug.bat` still runs `taskkill /F`. That line is upstream code and Elijah runs the script by hand. The follow-up is in ADR 0002.
 
+## Status
+
+The branch passed its Opus audit after the 1ba0fdd fix and merged into fork `main` as PR #4 (merge ae5ebd0). Its worktree is removed.
+
 ## Next
 
-1. Opus audit of the branch, then fix rounds until it is clean.
-2. Push to `fork`, open the PR against fork `main`, merge.
-3. Remove this branch's worktree. Delete its `node_modules` junction first.
+1. tv-2 has its own handoff on the local backtest branch. Its commands and templates pass their tests against an in-memory fake, but nothing has run against a live chart. That needs a supervised run with Elijah's yes.
+2. Decide the `launch_tv_debug.bat` follow-up in ADR 0002 with Elijah.
