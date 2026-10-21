@@ -22,11 +22,13 @@ Elijah said resume, and the audit and fix rule says to pick the safest option, s
 - Haiku B: `src/core/trades.js` skips a stop or target that isn't positive. A Filled row with a blank or invalid quantity skips every entry on that symbol, because the exit replay would be wrong.
 - Opus: when `kill_existing` is false, the `src/core/health.js` MSIX fallback kills only the child it spawned, by PID, never by image name.
 
+Commit bcaec23 holds all three fixes. `npm run test:unit` passes 291 of 291 tests and exits 1 only because of the known sanitization `C:\C:\` bug. `tests/bool_params.test.js` was added to `test:unit` and `test:all`.
+Known gap, documented and not fixed: if Elijah opens TradingView during the CDP wait and Electron's single-instance lock hands that window to our spawned process, the PID kill closes his window.
+
 ## Next (in order)
-1. Collect the three agents' results, then run `npm run test:unit` in the worktree.
-2. Opus audit of the whole branch, including the handoff commit. Fix and re-audit until it comes back clean.
-3. Push to `fork`, open a PR, link it, merge, and remove the worktree.
-4. Then stop and wait on the open questions below.
+1. Opus audit of `fork/main..fix/bool-params-and-kill-scope`, including the handoff commits. Fix and re-audit until it comes back clean.
+2. Push to `fork`, open a PR, link it, merge, and remove the worktree.
+3. Then stop and wait on the open questions below.
 
 ## Open questions for Elijah
 1. package-lock.json drift with no package.json change: (a) discard or (b) commit.
