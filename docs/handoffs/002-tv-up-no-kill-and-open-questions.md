@@ -45,7 +45,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 - `src/core/health.js` has `launch()` and the MSIX fallback kill guard.
 - `src/core/trades.js` and `src/core/drawing.js` hold the trade bracket linking and the drawing dedupe.
 - `src/tools/_params.js` holds the strict `bool` schema that replaced `z.coerce.boolean()`.
-- `scripts/mc_basic_1m/fwd_run.sh`, `fwd_snap.mjs` and `fwd_eval.mjs` run the forward check-in. They need layout tab 1 on `CME_MINI:MES1!|15`.
+- `scripts/mc_basic_1m/snapshot.mjs` (with `--forward`) and `forward.mjs` run the forward check-in. They are only on backtest/mc-basic-1m and need layout tab 1 on `CME_MINI:MES1!` 15m. An earlier version of this doc named `fwd_run.sh`, `fwd_snap.mjs` and `fwd_eval.mjs`. None of them exist on any branch or on disk.
 - `%TEMP%\mc_fwd\snap_20261020_2026.txt` is the failed rerun log.
 
 ## Gotchas
