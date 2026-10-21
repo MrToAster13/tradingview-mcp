@@ -45,7 +45,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 - `src/core/health.js` has `launch()` and the MSIX fallback kill guard.
 - `src/core/trades.js` and `src/core/drawing.js` hold the trade bracket linking and the drawing dedupe.
 - `src/tools/_params.js` holds the strict `bool` schema that replaced `z.coerce.boolean()`.
-- `scripts/mc_basic_1m/snapshot.mjs` (with `--forward`) and `forward.mjs` run the forward check-in. They are only on backtest/mc-basic-1m and need layout tab 1 on `CME_MINI:MES1!` 15m. An earlier version of this doc named `fwd_run.sh`, `fwd_snap.mjs` and `fwd_eval.mjs`. None of them exist on any branch or on disk.
+- The forward check-in is `%TEMP%\mc_fee1\an\fwd_run.sh`. It runs `fwd_snap.mjs` and then `fwd_eval.mjs` from that folder, and none of the three is in git. `fwd_snap.mjs` looks for a chart page showing `CME_MINI:MES1!|15`, opens hidden 1m and 15m sessions in it, and reads `%TEMP%\mc_tab2\run_h1.js`. `fwd_eval.mjs` also reads `%TEMP%\mc_tab2\snapshot_2026-10-16_sr5.json`. These live in a temp folder, so a cleanup can delete them. The repo's own versions, `scripts/mc_basic_1m/snapshot.mjs --forward` and `forward.mjs`, are only on backtest/mc-basic-1m.
 - `%TEMP%\mc_fwd\snap_20261020_2026.txt` is the failed rerun log.
 
 ## Gotchas
