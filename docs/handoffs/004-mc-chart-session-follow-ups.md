@@ -47,7 +47,19 @@ Three low claim findings:
 - `scripts/launch_tv_debug.bat` still runs `taskkill /F`. Handoff 002 on fork `main` (line 57) says Elijah runs it by hand, so changing it changes his bring-up. ADR 0002 on fork `main` records it as a follow-up.
 - `%TEMP%\mcaudit` holds scratch copies and an `attack.mjs` dated 2026-10-20, from before this work. The auditor says it did not write `attack.mjs`. Left alone.
 
+## Rule change, 2026-10-21
+
+After this work, Elijah replaced the audit loop. From now on:
+
+- Every code change goes through the tdd-loop skill: baseline the full suite, write failing tests that map 1:1 to the ticket's acceptance criteria, make them pass in at most 10 logged iterations, run tdd-loop's Opus review, add a failing regression test for each confirmed finding and fix it, run the security stage, and commit only when every gate passes. Never edit an assertion to make a test pass.
+- The ticket's acceptance criteria are the spec. Ask Elijah only when a ticket has none.
+- Docs, comments and config text with no behavior to test run only the security stage, then commit.
+- Commit only. Elijah pushes and merges.
+- Hard stop on 10 iterations, two iterations with the same failing set, or a test that looks wrong. Leave the work uncommitted, write the reason here and wait.
+
+Pushed before the change: branch `docs/handoff-003-status` to the fork, merged as PR #5 (merge 1b926d8). That was a docs-only update to handoff 003. Nothing was pushed after the change.
+
 ## Next
 
 1. A supervised live run of `node scripts/mc_basic_1m/cli.mjs` against the chart, once Elijah says yes.
-2. Decide the `API_MEMBERS` question against design_v14 line 129.
+2. Decide the `API_MEMBERS` question against design_v14 line 129. No ticket covers it, so any code change waits for a ticket with acceptance criteria.
