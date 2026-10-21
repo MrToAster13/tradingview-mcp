@@ -151,6 +151,12 @@ function num(v) {
  * the replay starts each symbol at netAtExport minus the sum of its fills;
  * otherwise it starts flat. A bracketed order that only shrinks the position
  * is a close, not an entry.
+ *
+ * Skip reasons, one per skipped entry: 'ambiguous bracket'; 'no bracket';
+ * 'missing or invalid bracket price' (stop or target not positive); 'invalid
+ * quantity in order history' (its symbol has a Filled row whose Quantity is
+ * not positive, which would misplace that symbol's exits); 'missing or invalid
+ * fill price'; 'missing or invalid quantity'.
  */
 export function buildFills({ orders, balances, exportTime, netAtExport }) {
   // CSV is newest first; a higher row index is earlier in the export.
@@ -253,6 +259,9 @@ export function buildFills({ orders, balances, exportTime, netAtExport }) {
     .map(e => ({ ...e, t: localToUnix(e.r.o['Closing time']) }))
     .sort((a, b) => a.t - b.t || b.r.idx - a.r.idx);
   const positive = (x) => x !== null && x > 0;
+  // A Filled row without a positive Quantity counts as 0 in the replay, which
+  // misplaces exits on its symbol, so every entry on that symbol is skipped.
+  const badQtySymbols = new Set(filled.filter(r => !positive(num(r.o['Quantity']))).map(r => r.o['Symbol']));
   for (const { r, stop, target, ambiguous, t } of ordered) {
     const o = r.o;
     if (ambiguous) {
@@ -261,6 +270,14 @@ export function buildFills({ orders, balances, exportTime, netAtExport }) {
     }
     if (stop === null || target === null) {
       skipped.push({ order_id: o['Order ID'], reason: 'no bracket' });
+      continue;
+    }
+    if (!positive(stop) || !positive(target)) {
+      skipped.push({ order_id: o['Order ID'], reason: 'missing or invalid bracket price' });
+      continue;
+    }
+    if (badQtySymbols.has(o['Symbol'])) {
+      skipped.push({ order_id: o['Order ID'], reason: 'invalid quantity in order history' });
       continue;
     }
     // Blank, whitespace, unparseable and zero values never reach a drawing.
