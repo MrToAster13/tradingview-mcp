@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as store from './store.mjs';
 import { main } from './recorder.mjs';
+import { fakeChart, chartError } from './fake_chart.mjs';
 
 const made = [];
 
@@ -39,44 +40,35 @@ function makeChart() {
   return { bars, b, sr };
 }
 
-/** The read_history result for one tab, copied so mutations between polls stay visible only via the chart. */
+/** The read_history result for one tab, in the template's six-element shape. */
 function readResult(chart, tab) {
   const copy = JSON.parse(JSON.stringify(chart));
   const bPlots = Array.from({ length: 16 }, (_, k) => ({ id: `plot_${k + 1}`, type: 'line' }));
   const srPlots = Array.from({ length: 5 }, (_, k) => ({ id: `sr_${k + 1}`, type: 'line' }));
-  if (tab === 'tab2') return [copy.bars, copy.b, null, bPlots, null];
-  return [copy.bars, copy.b, copy.sr, bPlots, srPlots];
+  if (tab === 'tab2') return [copy.bars, copy.b, null, bPlots, null, null];
+  return [copy.bars, copy.b, copy.sr, bPlots, srPlots, null];
 }
 
 /**
- * Mock deps. The clock is in ms and starts after the last bar closes, so every bar is closed.
- * afterSleep(state) runs after each sleep, with state.sleeps counting the sleeps so far.
+ * Shared fake chart. The clock is in ms and starts after the last bar closes, so every bar is
+ * closed. Each sleep advances the clock. afterSleep(state) runs after each sleep, with
+ * state.sleeps counting the sleeps so far. Reads come from state.chart, so a test can change
+ * the chart between polls.
  */
 function makeDeps({ chart = makeChart(), tab2Fails = false, afterSleep = () => {} } = {}) {
-  const out = [];
-  const err = [];
-  const reads = [];
   const state = { sleeps: 0, chart: { tab1: chart, tab2: makeChart() } };
-  const clock = { t: (T0 + 3600) * 1000 };
-  const deps = {
-    run: async (name, args, tab) => {
-      if (name !== 'read_history') throw new Error(`unexpected template ${name}`);
-      reads.push(tab);
-      if (tab === 'tab2' && tab2Fails) {
-        throw Object.assign(new Error('no tab 2 page'), { code: 'E_TAB2_NONE' });
-      }
-      return readResult(state.chart[tab], tab);
-    },
-    now: () => clock.t,
-    sleep: async (ms) => {
-      clock.t += ms;
+  const deps = fakeChart({
+    now: (T0 + 3600) * 1000,
+    afterSleep: () => {
       state.sleeps += 1;
       afterSleep(state);
     },
-    out: (line) => out.push(line),
-    err: (line) => err.push(line),
-  };
-  return { deps, out, err, reads, state, clock };
+    replies: {
+      'read_history tab1': () => readResult(state.chart.tab1, 'tab1'),
+      'read_history tab2': () => (tab2Fails ? chartError('E_TAB2_NONE', 'no tab 2 page') : readResult(state.chart.tab2, 'tab2')),
+    },
+  });
+  return { deps, out: deps.stdout, err: deps.stderr, state, clock: deps.clock };
 }
 
 function historyEntries() {

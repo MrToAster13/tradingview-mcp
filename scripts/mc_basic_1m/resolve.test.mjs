@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as store from './store.mjs';
 import { main } from './resolve.mjs';
+import { fakeChart, sequence } from './fake_chart.mjs';
 
 const T0 = 1700000000;
 const DEADLINE = 1700000100000;
@@ -64,20 +65,7 @@ function seed(records) {
 
 /** Mock deps: reads[i] is returned by the i-th read_shapes call; an Error entry is thrown. */
 function makeDeps(now, reads) {
-  const d = { calls: [], sleeps: [], stdout: [], stderr: [], clock: { t: now } };
-  let i = 0;
-  d.now = () => d.clock.t;
-  d.sleep = async (ms) => { d.sleeps.push(ms); };
-  d.out = (line) => { d.stdout.push(line); };
-  d.err = (line) => { d.stderr.push(line); };
-  d.run = async (name, args, tab) => {
-    d.calls.push({ name, args, tab });
-    const r = reads[Math.min(i, reads.length - 1)];
-    i++;
-    if (r instanceof Error) throw r;
-    return r;
-  };
-  return d;
+  return fakeChart({ now, advanceClock: false, replies: { 'read_shapes tab1': sequence(...reads) } });
 }
 
 function recordIn(key = KEY) {

@@ -2,13 +2,13 @@ import CDP from 'chrome-remote-interface';
 import { createHash } from 'node:crypto';
 import { TEMPLATES, PLACEHOLDERS, prepareValues, fillTemplate } from './templates.mjs';
 
-// SHA-256 of each template text. Integration replaces these placeholder strings with the real digests.
+// SHA-256 of each template text in templates.mjs. templates_hash.test.mjs recomputes and checks them.
 const TEMPLATE_SHA256 = Object.freeze({
-  identity: 'FILL_AT_INTEGRATION',
-  discover: 'FILL_AT_INTEGRATION',
-  read_history: 'FILL_AT_INTEGRATION',
-  read_shapes: 'FILL_AT_INTEGRATION',
-  draw_trade: 'FILL_AT_INTEGRATION',
+  identity: '58aa3826896237224d849e5ac5c5ece07a2ff51b39667bc521a1b0933a0598a3',
+  discover: '448f6696043b064a8994025dca4a9967f46bd05e71e7c4c88bfbe4ee7ee76f5c',
+  read_history: 'eb4db61119f1c060308731e5fbc2541fa50a102eff16c55af7c48728f6a7d19a',
+  read_shapes: '06958f0e95bf24346ab1e277ac5dd9f9ffc43bc579f22a976d5af834a973cf67',
+  draw_trade: '632564e3dad4026052070ce162420f3adcbc92ad0c22627d1e9103f4e171c409',
 });
 
 const TAB1_ID = 'HCCCDVCt';

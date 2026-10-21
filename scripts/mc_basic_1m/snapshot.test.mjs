@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import * as store from './store.mjs';
 import { main } from './snapshot.mjs';
 import { prepare, sha256Rows } from './sim.mjs';
+import { fakeChart } from './fake_chart.mjs';
 
 // 2026-10-01 14:00 UTC (10:00 ET). October is not a roll month. Aligned to 900 s.
 const T0 = Date.UTC(2026, 9, 1, 14, 0) / 1000;
@@ -55,25 +56,17 @@ function fixtures() {
   };
 }
 
+/** Shared fake chart. replies.history1, history2 and shapes answer the three reads. */
 function mockDeps(replies, nowMs = SNAP_S * 1000) {
-  const calls = [];
-  const outLines = [];
-  const errLines = [];
-  const run = async (name, args, tab) => {
-    calls.push([name, args, tab]);
-    if (name === 'read_history' && tab === 'tab1') return replies.history1;
-    if (name === 'read_history' && tab === 'tab2') return replies.history2;
-    if (name === 'read_shapes' && tab === 'tab1') return replies.shapes;
-    throw new Error(`unexpected run ${name} ${tab}`);
-  };
-  const deps = {
-    run,
-    now: () => nowMs,
-    sleep: async () => {},
-    out: (line) => outLines.push(line),
-    err: (line) => errLines.push(line),
-  };
-  return { deps, calls, outLines, errLines };
+  const deps = fakeChart({
+    now: nowMs,
+    replies: {
+      'read_history tab1': replies.history1,
+      'read_history tab2': replies.history2,
+      'read_shapes tab1': replies.shapes,
+    },
+  });
+  return { deps, calls: deps.calls, outLines: deps.stdout, errLines: deps.stderr };
 }
 
 const fileSha = (file) => createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -103,12 +96,12 @@ test('a valid read writes snapshot.json whose rows hash matches sha256', async (
   const { deps, calls, outLines } = mockDeps(f);
   const code = await main([], deps);
   assert.equal(code, 0, outLines.join('\n'));
-  assert.deepEqual(calls.map((c) => [c[0], c[2]]), [
+  assert.deepEqual(calls.map((c) => [c.name, c.tab]), [
     ['read_history', 'tab1'],
     ['read_history', 'tab2'],
     ['read_shapes', 'tab1'],
   ]);
-  for (const c of calls) assert.deepEqual(c[1], {});
+  for (const c of calls) assert.deepEqual(c.args, {});
 
   const file = store.snapshotPath('current');
   assert.ok(fs.existsSync(file));
