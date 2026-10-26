@@ -95,6 +95,16 @@ Elijah's written rule and his intended rule differ. His drawings show the intend
 
 - Read them with `getAllShapes()` and `getShapeById()`. `stopLevel` and `profitLevel` are in ticks from the entry.
 - Score any rule against them before you call it his rule. Report how many drawn trades the rule catches. For example, his text said money flow "25 either side", but "with the trade at 23" caught 14 of 15 drawn trades and his text's version caught 10.
+- Drawing times are in the chart's time zone, America/Chicago. Match a drawing to a bar with `timeZone: 'America/Chicago'`, not the machine's local zone. On 2026-10-26 a match in Los Angeles time put every drawing 2 hours off. Check that the matched bar's open equals the drawn entry within a tick.
+
+### Drawing simulated trades for him to review
+
+To let him correct a rule by hand, for example moving each target to where it should be, draw the simulated trades as position shapes and read them back afterwards.
+
+- Create each one with `createMultipointShape([{ time: entry, price }, { time: end, price }], { shape: 'long_position' or 'short_position', overrides: { stopLevel, profitLevel } })`, levels in ticks. Then read the shape back with `getShapeById(id).getPoints()` and `getProperties()` and remove it if the time, price or ticks differ.
+- A shape whose time is before the first loaded bar snaps both points to that bar. The live 1m chart holds about 15,000 bars, so anything older than about two weeks needs a replay window. Start replay after the trade's exit, load history with `requestMoreData`, draw, then stop replay. Shapes drawn in replay keep their exact time after replay stops. He then needs bar replay to see those trades on 1m.
+- Skip trades within 30 minutes of one of his own position drawings, and save every created id to a file. Read his edits back by id, and remove only those ids when cleaning up.
+- The 2026-10-26 run drew 100 MC B dot v2 trades this way. Handoff 003 has the details and the read-back steps.
 
 ## Process
 
