@@ -140,6 +140,9 @@ function num(v) {
  *
  * An entry is a Filled order with a Leverage value. Its bracket is the
  * opposite-side Stop and Limit orders sharing its (symbol, Placing time).
+ * When several entries share that second, a bracket is linked only by a
+ * non-empty Level ID that the entry and its bracket share with no other entry;
+ * otherwise the entry is skipped as 'ambiguous bracket'.
  * Exit times come from replaying every Filled order per symbol: when the net
  * position returns to zero or flips, all open entries exit at that fill.
  *
@@ -148,6 +151,13 @@ function num(v) {
  * the replay starts each symbol at netAtExport minus the sum of its fills;
  * otherwise it starts flat. A bracketed order that only shrinks the position
  * is a close, not an entry.
+ *
+ * Skip reasons, one per skipped entry: 'ambiguous bracket'; 'no bracket';
+ * 'missing or invalid bracket price' (stop or target not positive); 'invalid
+ * quantity in order history' (its symbol has a Filled row whose Quantity is
+ * not positive, which would misplace that symbol's exits); 'missing or invalid
+ * fill price'; 'missing or invalid quantity'; 'bracket on wrong side of fill'
+ * (a long needs stop < fill < target, a short target < fill < stop).
  */
 export function buildFills({ orders, balances, exportTime, netAtExport }) {
   // CSV is newest first; a higher row index is earlier in the export.
@@ -160,17 +170,28 @@ export function buildFills({ orders, balances, exportTime, netAtExport }) {
     groups.get(key).push(r);
   }
 
-  const entries = new Map(); // row idx → { row, stop, target }
+  const lvl = (o) => String(o['Level ID'] ?? '').trim();
+  const entries = new Map(); // row idx → { r, stop, target, ambiguous }
   for (const group of groups.values()) {
-    for (const r of group) {
-      if (r.o['Status'] !== 'Filled' || !r.o['Leverage']) continue;
+    const groupEntries = group.filter(r => r.o['Status'] === 'Filled' && r.o['Leverage']);
+    for (const r of groupEntries) {
       const opposite = r.o['Side'] === 'Buy' ? 'Sell' : 'Buy';
-      const stopRow = group.find(g => g.o['Side'] === opposite && g.o['Type'] === 'Stop');
-      const targetRow = group.find(g => g.o['Side'] === opposite && g.o['Type'] === 'Limit');
+      let stops = group.filter(g => g.o['Side'] === opposite && g.o['Type'] === 'Stop');
+      let targets = group.filter(g => g.o['Side'] === opposite && g.o['Type'] === 'Limit');
+      let ambiguous = false;
+      if (groupEntries.length > 1) {
+        const key = lvl(r.o);
+        const linked = key !== '' && groupEntries.filter(e => lvl(e.o) === key).length === 1;
+        ambiguous = !linked && stops.length + targets.length > 0;
+        stops = linked ? stops.filter(g => lvl(g.o) === key) : [];
+        targets = linked ? targets.filter(g => lvl(g.o) === key) : [];
+      }
+      ambiguous = ambiguous || stops.length > 1 || targets.length > 1;
       entries.set(r.idx, {
         r,
-        stop: stopRow ? num(stopRow.o['Stop price']) : null,
-        target: targetRow ? num(targetRow.o['Limit price']) : null,
+        stop: stops.length === 1 ? num(stops[0].o['Stop price']) : null,
+        target: targets.length === 1 ? num(targets[0].o['Limit price']) : null,
+        ambiguous,
       });
     }
   }
@@ -238,19 +259,53 @@ export function buildFills({ orders, balances, exportTime, netAtExport }) {
   const ordered = [...entries.values()]
     .map(e => ({ ...e, t: localToUnix(e.r.o['Closing time']) }))
     .sort((a, b) => a.t - b.t || b.r.idx - a.r.idx);
-  for (const { r, stop, target, t } of ordered) {
+  const positive = (x) => x !== null && x > 0;
+  // A Filled row without a positive Quantity counts as 0 in the replay, which
+  // misplaces exits on its symbol, so every entry on that symbol is skipped.
+  const badQtySymbols = new Set(filled.filter(r => !positive(num(r.o['Quantity']))).map(r => r.o['Symbol']));
+  for (const { r, stop, target, ambiguous, t } of ordered) {
     const o = r.o;
+    if (ambiguous) {
+      skipped.push({ order_id: o['Order ID'], reason: 'ambiguous bracket' });
+      continue;
+    }
     if (stop === null || target === null) {
       skipped.push({ order_id: o['Order ID'], reason: 'no bracket' });
+      continue;
+    }
+    if (!positive(stop) || !positive(target)) {
+      skipped.push({ order_id: o['Order ID'], reason: 'missing or invalid bracket price' });
+      continue;
+    }
+    if (badQtySymbols.has(o['Symbol'])) {
+      skipped.push({ order_id: o['Order ID'], reason: 'invalid quantity in order history' });
+      continue;
+    }
+    // Blank, whitespace, unparseable and zero values never reach a drawing.
+    const qty = num(o['Quantity']);
+    const entryPrice = num(o['Fill price']);
+    if (!positive(entryPrice)) {
+      skipped.push({ order_id: o['Order ID'], reason: 'missing or invalid fill price' });
+      continue;
+    }
+    if (!positive(qty)) {
+      skipped.push({ order_id: o['Order ID'], reason: 'missing or invalid quantity' });
+      continue;
+    }
+    // planPosition takes distances, so a stop or target on the wrong side of
+    // the fill would be drawn as a mirrored bracket.
+    const long = o['Side'] === 'Buy';
+    if (long ? !(stop < entryPrice && entryPrice < target) : !(target < entryPrice && entryPrice < stop)) {
+      skipped.push({ order_id: o['Order ID'], reason: 'bracket on wrong side of fill' });
       continue;
     }
     const exit = exitByIdx.get(r.idx);
     fills.push({
       order_id: o['Order ID'],
       symbol: o['Symbol'],
-      side: o['Side'] === 'Buy' ? 'long' : 'short',
-      qty: num(o['Quantity']),
-      entry_price: num(o['Fill price']),
+      side: long ? 'long' : 'short',
+      qty,
+      entry_price: entryPrice,
       entry_time: t,
       stop,
       target,

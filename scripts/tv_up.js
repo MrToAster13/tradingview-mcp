@@ -3,7 +3,8 @@
  * Bring up the remote TradingView MCP stack, one idempotent step at a time:
  *
  *   1/5 api key  TV_MCP_API_KEY must be set (>= 32 chars)
- *   2/5 cdp      TradingView answering on 127.0.0.1:<TV_CDP_PORT|9222>, else launch()
+ *   2/5 cdp      TradingView answering on 127.0.0.1:<TV_CDP_PORT|9222>; if it runs without
+ *                CDP, retry ~10s then refuse (never kill it); launch() only when none runs
  *   3/5 http     `node src/server.js --http` answering /health, else spawn it detached
  *   4/5 funnel   tailscale funnel :8443 -> http://127.0.0.1:<port>, else add it
  *   5/5 url      print https://<MagicDNS name>:8443/mcp
@@ -23,6 +24,7 @@ import { dirname, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { validateApiKey, DEFAULT_HTTP_PORT } from '../src/http.js';
 import { launch, envWithoutElectronRunAsNode } from '../src/core/health.js';
+import { ensureTradingView, isTvRunning, probeCdp } from '../src/core/tv_process.js';
 
 const FUNNEL_PORT = 8443;
 const LOCAL = '127.0.0.1';
@@ -85,21 +87,6 @@ function httpRequest(url, { method = 'GET', headers = {}, body, timeoutMs = 2000
 
 const execFileP = promisify(execFile);
 
-async function isTvRunning() {
-  try {
-    if (process.platform === 'win32') {
-      const { stdout } = await execFileP('tasklist', ['/FI', 'IMAGENAME eq TradingView.exe', '/NH'], { windowsHide: true });
-      return /TradingView\.exe/i.test(stdout);
-    }
-    // Exact process-name match; -f would also match this repo's own path.
-    const name = process.platform === 'darwin' ? 'TradingView' : 'tradingview';
-    await execFileP('pgrep', process.platform === 'darwin' ? ['-x', name] : ['-i', '-x', name]);
-    return true;
-  } catch {
-    return false; // pgrep exits 1 when nothing matches
-  }
-}
-
 function spawnHttpServer({ env }) {
   const child = spawn(process.execPath, [SERVER_JS, '--http'], {
     detached: true, stdio: 'ignore', env, windowsHide: true,
@@ -115,7 +102,8 @@ async function tailscale(args) {
 const defaultDeps = {
   log: (line) => console.log(line),
   httpRequest,
-  isTvRunning,
+  probeCdp,
+  isTvRunning: () => isTvRunning(),
   launch,
   spawnHttpServer,
   tailscale,
@@ -190,25 +178,21 @@ export async function tvUp({ env = process.env, argv = [], _deps } = {}) {
     // 2. TradingView with CDP
     step = '2/5 cdp';
     const cdpPort = cdpPortFrom(env);
-    const cdpUrl = `http://${LOCAL}:${cdpPort}/json/version`;
-    const cdpUp = async () => { const r = await deps.httpRequest(cdpUrl); return !!r && r.status === 200; };
-    if (await cdpUp()) {
+    let tv;
+    try {
+      tv = await ensureTradingView({
+        port: cdpPort,
+        _deps: { probeCdp: deps.probeCdp, isTvRunning: deps.isTvRunning, launch: deps.launch, delay: deps.delay },
+      });
+    } catch (err) {
+      throw new StepError(err.message);
+    }
+    if (tv.state === 'up') {
       log(`${step}: TradingView already answering on ${LOCAL}:${cdpPort}`);
+    } else if (tv.ready) {
+      log(`${step}: launched TradingView, CDP answering on ${LOCAL}:${cdpPort}`);
     } else {
-      if (await deps.isTvRunning()) {
-        log(`    warning: TradingView is running without CDP on port ${cdpPort}; launching will kill and restart it.`);
-      }
-      let result;
-      try {
-        result = await deps.launch({ port: cdpPort });
-      } catch (err) {
-        throw new StepError(`launch failed: ${err.message}`);
-      }
-      if (await cdpUp()) {
-        log(`${step}: launched TradingView, CDP answering on ${LOCAL}:${cdpPort}`);
-      } else {
-        log(`${step}: launched TradingView, but CDP not answering yet on ${LOCAL}:${cdpPort}${result?.warning ? ` (${result.warning})` : ''}`);
-      }
+      log(`${step}: launched TradingView, but CDP not answering yet on ${LOCAL}:${cdpPort}${tv.warning ? ` (${tv.warning})` : ''}`);
     }
 
     // 3. HTTP MCP server

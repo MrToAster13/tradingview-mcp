@@ -30,14 +30,14 @@ function funnelWith8443(proxy, { allowFunnel = true } = {}) {
 function world({
   cdpUp = false, tvRunning = false, httpUp = false, httpKeyMatches = true,
   httpComesUp = true, funnel = PROXY_443, launchBringsCdp = true, launchThrows = null,
-  tailscaleMissing = false, dnsName = `${DNS}.`,
+  tailscaleMissing = false, dnsName = `${DNS}.`, cdpStalls = 0,
 } = {}) {
-  const s = { cdpUp, tvRunning, httpUp, funnel, calls: [], lines: [], spawnEnv: null, tailscaleArgs: [] };
+  // cdpStalls: how many CDP probes return nothing before CDP answers (a stalled probe).
+  const s = { cdpUp, tvRunning, httpUp, funnel, cdpStalls, calls: [], lines: [], spawnEnv: null, tailscaleArgs: [], delays: [] };
   const deps = {
     log: (line) => { s.lines.push(line); s.calls.push(`log:${line}`); },
     httpRequest: async (url, opts = {}) => {
       s.calls.push(`http:${opts.method || 'GET'} ${url}`);
-      if (url.endsWith('/json/version')) return s.cdpUp ? { status: 200, body: '{"Browser":"x"}' } : null;
       if (url.endsWith('/health')) return s.httpUp ? { status: 200, body: 'ok' } : null;
       if (url.endsWith('/mcp')) {
         if (!s.httpUp) return null;
@@ -45,6 +45,11 @@ function world({
         return { status: ok ? 406 : 401, body: '' };
       }
       throw new Error(`unexpected url ${url}`);
+    },
+    probeCdp: async (port, host) => {
+      s.calls.push(`http:GET http://${host}:${port}/json/version`);
+      if (s.cdpStalls > 0) { s.cdpStalls--; return null; }
+      return s.cdpUp ? '{"Browser":"x"}' : null;
     },
     isTvRunning: async () => { s.calls.push('isTvRunning'); return s.tvRunning; },
     launch: async (opts) => {
@@ -71,7 +76,7 @@ function world({
       if (args[0] === 'status') return JSON.stringify({ Self: { DNSName: dnsName, HostName: 'box' } });
       throw new Error(`unexpected tailscale ${args.join(' ')}`);
     },
-    delay: async () => {},
+    delay: async (ms) => { s.delays.push(ms); },
   };
   return { s, deps };
 }
@@ -124,28 +129,42 @@ describe('tv_up — step 2: TradingView CDP', () => {
     assert.ok(s.calls.includes('http:GET http://127.0.0.1:9222/json/version'));
   });
 
-  it('CDP down and TradingView running → one-line warning printed before launch', async () => {
+  it('TradingView running without CDP → retries ~10s, refuses, never launches or runs later steps', async () => {
     const { s, deps } = world({ tvRunning: true, httpUp: true, funnel: funnelWith8443('http://127.0.0.1:8765') });
-    assert.equal(await run(deps), 0);
-    const warnIdx = s.calls.findIndex((c) => c.startsWith('log:') && /running without CDP/.test(c));
-    const launchIdx = s.calls.findIndex((c) => c.startsWith('launch'));
-    assert.ok(warnIdx >= 0, 'no warning');
-    assert.ok(launchIdx > warnIdx, 'warning must precede launch');
-    assert.ok(!s.calls[warnIdx].includes('\n'), 'warning must be one line');
+    assert.equal(await run(deps), 1);
+    assert.ok(!s.calls.some((c) => c.startsWith('launch')), 'must never launch (launch kills TradingView)');
+    const probes = s.calls.filter((c) => c.endsWith('/json/version')).length;
+    assert.ok(probes > 2, `should retry the probe, got ${probes} probe(s)`);
+    const waited = s.delays.reduce((a, b) => a + b, 0);
+    assert.ok(waited >= 8000 && waited <= 12000, `should wait about 10s, waited ${waited}ms`);
+    assert.match(out(s), /2\/5 cdp: FAILED\. TradingView is running without CDP on 127\.0\.0\.1:9222/);
+    assert.match(out(s), /Close TradingView yourself and re-run/);
+    assert.match(out(s), /--remote-debugging-port=9222/);
+    assert.ok(!s.calls.includes('spawnHttpServer'));
+    assert.ok(!s.calls.some((c) => c.startsWith('tailscale')));
   });
 
-  it('CDP down and TradingView not running → launches without the kill warning', async () => {
+  it('TradingView running, first CDP probe stalls then answers → proceeds without launch', async () => {
+    const { s, deps } = world({ cdpUp: true, tvRunning: true, cdpStalls: 1, httpUp: true, funnel: funnelWith8443('http://127.0.0.1:8765') });
+    assert.equal(await run(deps), 0);
+    assert.ok(!s.calls.some((c) => c.startsWith('launch')));
+    assert.equal(s.calls.filter((c) => c.endsWith('/json/version')).length, 2);
+    assert.match(out(s), /2\/5 cdp: TradingView already answering on 127\.0\.0\.1:9222/);
+  });
+
+  it('CDP down and TradingView not running → launches with kill_existing false', async () => {
     const { s, deps } = world({ httpUp: true, funnel: funnelWith8443('http://127.0.0.1:8765') });
     assert.equal(await run(deps), 0);
     assert.ok(!/running without CDP/.test(out(s)));
-    assert.ok(s.calls.some((c) => c.startsWith('launch')));
+    assert.deepEqual(s.calls.filter((c) => c.startsWith('launch')), ['launch:{"port":9222,"kill_existing":false}']);
+    assert.ok(s.calls.indexOf('isTvRunning') < s.calls.findIndex((c) => c.startsWith('launch')), 'process check must precede launch');
   });
 
   it('honors TV_CDP_PORT for the probe and the launch', async () => {
     const { s, deps } = world({ httpUp: true, funnel: funnelWith8443('http://127.0.0.1:8765') });
     await run(deps, { env: { ...baseEnv, TV_CDP_PORT: '9333' } });
     assert.ok(s.calls.includes('http:GET http://127.0.0.1:9333/json/version'));
-    assert.ok(s.calls.includes('launch:{"port":9333}'));
+    assert.ok(s.calls.includes('launch:{"port":9333,"kill_existing":false}'));
   });
 
   it('launch throws → exit 1, later steps do not run', async () => {

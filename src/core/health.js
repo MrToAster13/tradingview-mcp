@@ -5,6 +5,7 @@ import { getClient, getTargetInfo, evaluate, CDP_HOST, CDP_PORT } from '../conne
 import { existsSync, cpSync, rmSync, readdirSync } from 'fs';
 import { execSync, spawn } from 'child_process';
 import { dirname, basename, join } from 'path';
+import { isTvRunning } from './tv_process.js';
 
 // Best-effort git-pull update check: compare local HEAD to origin's default
 // branch on GitHub. Never throws — returns null on any failure (offline,
@@ -202,7 +203,7 @@ export async function uiState() {
 const WINDOWS_APPS_RE = /\\WindowsApps\\/i;
 
 function _resolveLaunchDeps(deps) {
-  return {
+  const resolved = {
     spawn: deps?.spawn || spawn,
     execSync: deps?.execSync || execSync,
     existsSync: deps?.existsSync || existsSync,
@@ -211,7 +212,10 @@ function _resolveLaunchDeps(deps) {
     readdirSync: deps?.readdirSync || readdirSync,
     delay: deps?.delay || ((ms) => new Promise((r) => setTimeout(r, ms))),
     probeCdp: deps?.probeCdp || _probeCdp,
+    processKill: deps?.processKill || ((pid, sig) => process.kill(pid, sig)),
   };
+  resolved.isTvRunning = deps?.isTvRunning || (() => isTvRunning({ execSync: resolved.execSync }));
+  return resolved;
 }
 
 async function _probeCdp(cdpPort) {
@@ -239,6 +243,21 @@ export function envWithoutElectronRunAsNode(env = process.env) {
     if (k.toUpperCase() !== 'ELECTRON_RUN_AS_NODE') out[k] = v;
   }
   return out;
+}
+
+/**
+ * Watch a spawned child for 'error' (it never started) and 'exit' (it ended),
+ * so a later kill-by-PID is never aimed at a PID Windows may have reused.
+ */
+function _trackChild(child) {
+  const t = { errored: false, exited: false };
+  child.once?.('error', () => { t.errored = true; });
+  child.once?.('exit', () => { t.exited = true; });
+  return t;
+}
+
+function _isUsablePid(pid) {
+  return Number.isInteger(pid) && pid > 0;
 }
 
 function _spawnDetached(spawnFn, exe, args) {
@@ -331,6 +350,9 @@ export async function launch({ port, kill_existing, _deps } = {}) {
   const cdpPort = port || CDP_PORT;
   const killFirst = kill_existing !== false;
   const platform = process.platform;
+  // With kill_existing: false, the MSIX fallback below may only kill the copy
+  // this call spawned, so note whether one was already running.
+  const tvRunningAtStart = killFirst ? null : await deps.isTvRunning();
 
   const pathMap = {
     darwin: [
@@ -400,6 +422,16 @@ export async function launch({ port, kill_existing, _deps } = {}) {
     } catch { /* may not be running */ }
   };
 
+  // Kills one process tree by PID, never by image name. Used on the
+  // kill_existing: false path, where only the copy this call spawned may die.
+  const killOwnPid = async (pid) => {
+    try {
+      if (platform === 'win32') deps.execSync(`taskkill /F /T /PID ${pid}`, { timeout: 5000 });
+      else deps.processKill(pid, 'SIGTERM');
+      await deps.delay(1500);
+    } catch { /* may have exited already */ }
+  };
+
   if (killFirst) await killExisting();
 
   const cdpArgs = [`--remote-debugging-port=${cdpPort}`];
@@ -409,6 +441,8 @@ export async function launch({ port, kill_existing, _deps } = {}) {
   let userDataDir = null;
 
   if (platform === 'win32' && WINDOWS_APPS_RE.test(tvPath)) {
+    const directChild = child;
+    const directState = _trackChild(directChild);
     const earlyFailure = await _spawnFailedEarly(child);
     if (!earlyFailure) {
       info = await _waitForCdp({ cdpPort, attempts: 15, delay: deps.delay, probeCdp: deps.probeCdp });
@@ -416,10 +450,32 @@ export async function launch({ port, kill_existing, _deps } = {}) {
     if (!info) {
       // Direct WindowsApps launch was blocked or CDP never bound — fall back to
       // a local copy of the package (see _copyMsixPackageLocal).
+      // The fallback kills TradingView first. With kill_existing: false that is
+      // only safe when nothing was running at the start (the only copy is ours).
+      if (!killFirst && tvRunningAtStart) {
+        throw new Error(`Direct TradingView launch did not bind CDP on port ${cdpPort}, and TradingView was not killed because kill_existing is false (a TradingView process was already running). Close TradingView yourself and retry, or launch it with --remote-debugging-port=${cdpPort}.`);
+      }
+      // With kill_existing: false, never kill by image name here: a
+      // TradingView the user opened during the CDP wait would die too. Kill
+      // only our own direct spawn, by PID.
+      if (!killFirst) {
+        if (directState.errored || directState.exited) {
+          // Our process never started or has ended (MSIX may hand off to
+          // another process). Its PID may be reused, so kill nothing; go on
+          // only if no TradingView is running now.
+          if (await deps.isTvRunning()) {
+            throw new Error(`Direct TradingView launch did not bind CDP on port ${cdpPort}, and TradingView was not killed because kill_existing is false (the process this call started is gone and a TradingView process is now running, which may not be ours). Close TradingView yourself and retry, or launch it with --remote-debugging-port=${cdpPort}.`);
+          }
+        } else if (!_isUsablePid(directChild.pid)) {
+          throw new Error(`Direct TradingView launch did not bind CDP on port ${cdpPort}, and TradingView was not killed because kill_existing is false (the PID of the process this call started is unknown, so it cannot be told apart from yours). Close TradingView yourself and retry, or launch it with --remote-debugging-port=${cdpPort}.`);
+        } else {
+          await killOwnPid(directChild.pid);
+        }
+      }
       const localExe = _copyMsixPackageLocal(tvPath, deps);
       userDataDir = _msixProfileDir(tvPath, deps.existsSync);
       const localArgs = userDataDir ? [...cdpArgs, `--user-data-dir=${userDataDir}`] : cdpArgs;
-      await killExisting();
+      if (killFirst) await killExisting();
       child = _spawnDetached(deps.spawn, localExe, localArgs);
       tvPath = localExe;
       usedLocalCopy = true;

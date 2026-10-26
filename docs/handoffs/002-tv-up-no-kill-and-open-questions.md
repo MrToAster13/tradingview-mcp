@@ -38,7 +38,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 - Never push backtest/mc-basic-1m to the public fork as it stands, because commit 6aa97f4 says "do not push". `scripts/mc_basic_1m/store.mjs:11` has a home path, and `cdp.mjs:14-15`, `templates.mjs:21` and `lint.test.mjs` have the layout id.
 - Don't touch the live chart without Elijah's yes (question 4).
 - Never commit `docs/handoffs/001`, because the fork is public and that doc has the IP and SSH details.
-- The logon script `tv-proxy/start-tv-mcp.ps1` runs `scripts/tv_up.js` from whatever branch is checked out. On `backtest/mc-basic-1m`, which lacks the no-kill fix, it force-kills a TradingView that is open without CDP at sign-in. Handoff 001 has the details and the fix options.
+- The logon script `tv-proxy/start-tv-mcp.ps1` runs `scripts/tv_up.js` from whatever branch is checked out. Any branch without the no-kill fix from PR #1 force-kills a TradingView that is open without CDP at sign-in. On 2026-10-26 fork/main was merged into `backtest/mc-basic-1m` to bring the fix in. Check the checked-out branch has it before leaving it checked out.
 - Push only to the `fork` remote (MrToAster13). `origin` is upstream.
 
 ## Relevant files
