@@ -1,0 +1,224 @@
+//@version=6
+// MC B dot strategy v2, 1-minute futures. Copy of mc_b_dot_strategy.pine at its defaults, saved under a new name.
+// Entry: a momentum-wave dot confirmed on bar close. A long needs a green dot below zero,
+//        a short needs a red dot above zero. Two inputs set the rest of the rule:
+//        - Money flow side. "With the trade" (default): a long needs money flow above +23, a
+//          short below -23. The long and short positions drawn on the MES1! 1m chart sit there:
+//          this rule catches 14 of the 15 drawn trades, "Either side" at 25 catches 10.
+//          "Either side": money flow beyond the line in either direction.
+//          "Against the trade": a long needs money flow below the negative line, a short above.
+//        - Wave zone. "Inside" (default): the dot sits between 0 and the wave line (±45).
+//          "Beyond": the dot sits past the wave line.
+// Target: "Reward:risk multiple": K times the risk from the signal close, rounded down to a tick.
+//         "Nth free Cipher level": the 1st, 2nd, ... free MarketCipher_SR level beyond the entry.
+//         "First free Cipher level at least K risk away": the nearest free level that pays K R.
+//         A level is free until a bar after it was plotted trades through it.
+// Stop:   "Local high/low": the low (long) or high (short) of the last N bars. "Nth free Cipher
+//         level": the free level on the other side of the entry. Either one sits "Stop offset"
+//         ticks past that price; 0 puts it on the price itself, as in the drawn trades.
+// Prices are compared in whole ticks, so this matches scripts/mc_b_dot/sweep.mjs, which runs the
+// same rule over replay windows to pick the inputs per instrument.
+// MarketCipher_B and MarketCipher_SR are invite-only, so this script reads their plots through
+// input.source. Add both to the chart first, then link the six sources in Settings > Inputs.
+strategy("MC B Dot Strategy v2 (1m)", overlay = true, initial_capital = 10000,
+     default_qty_type = strategy.fixed, default_qty_value = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.5,
+     margin_long = 0, margin_short = 0)
+// margin 0: one MES contract is ~$38k notional, so the v6 default of 100% margin rejects every entry.
+
+// MarketCipher_B plots
+mf       = input.source(close, "Money flow (Mny Flow)", group = "MarketCipher_B sources")
+wave     = input.source(close, "Momentum wave (Blue Wave)", group = "MarketCipher_B sources")
+redDot   = input.source(close, "Red dot (Blue Wave Crossing Down)", group = "MarketCipher_B sources")
+greenDot = input.source(close, "Green dot (Blue Wave Crossing UP)", group = "MarketCipher_B sources")
+
+// MarketCipher_SR plots
+cipherRes = input.source(close, "Cipher Resistance", group = "MarketCipher_SR sources")
+cipherSup = input.source(close, "Cipher Support", group = "MarketCipher_SR sources")
+
+// Entry levels, from the lines drawn on the chart
+MF_EITHER   = "Either side"
+MF_AGAINST  = "Against the trade"
+MF_WITH     = "With the trade"
+WAVE_INSIDE = "Inside the wave line"
+WAVE_BEYOND = "Beyond the wave line"
+mfSide     = input.string(MF_WITH, "Money flow side", options = [MF_WITH, MF_EITHER, MF_AGAINST], group = "Entry")
+waveZone   = input.string(WAVE_INSIDE, "Wave zone at the dot", options = [WAVE_INSIDE, WAVE_BEYOND], group = "Entry")
+mfLevel    = input.float(23.0, "Money flow line ±", minval = 0, group = "Entry")
+waveLimit  = input.float(45.0, "Momentum wave line ±", minval = 0, group = "Entry")
+allowLong  = input.bool(true, "Take longs", group = "Entry")
+allowShort = input.bool(true, "Take shorts", group = "Entry")
+
+// Exits
+TP_RR       = "Reward:risk multiple"
+TP_LEVEL    = "Nth free Cipher level"
+TP_LEVEL_RR = "First free Cipher level at least K risk away"
+SL_SWING    = "Local high/low"
+SL_LEVEL    = "Nth free Cipher level"
+tpMode     = input.string(TP_RR, "Target", options = [TP_RR, TP_LEVEL, TP_LEVEL_RR], group = "Exit")
+rrTarget   = input.float(3.0, "Target reward:risk (K)", minval = 0.25, step = 0.25, group = "Exit")
+tpLevelN   = input.int(1, "Target level number (1 = nearest)", minval = 1, maxval = 9, group = "Exit")
+slMode     = input.string(SL_SWING, "Stop", options = [SL_SWING, SL_LEVEL], group = "Exit")
+swingBars  = input.int(20, "Local high/low lookback (bars)", minval = 1, group = "Exit")
+slLevelN   = input.int(1, "Stop level number (1 = nearest)", minval = 1, maxval = 9, group = "Exit")
+stopTicks  = input.int(1, "Stop offset (ticks past the price)", minval = 0, group = "Exit")
+minRR      = input.float(0.0, "Minimum reward:risk (0 = off)", minval = 0, step = 0.1, group = "Exit")
+flipExit   = input.bool(false, "Close or reverse on the opposite signal", group = "Exit")
+maxLevels  = input.int(200, "Cipher levels to remember", minval = 10, maxval = 1000, group = "Exit")
+
+// A dot plot is 0 or na on bars where it does not fire.
+fired(src) => not na(src) and src != 0
+
+// Every source still on its default (close) means nothing is linked yet.
+linkedB  = not (mf == close and wave == close)
+linkedSR = not (cipherRes == close and cipherSup == close)
+
+// Money flow condition
+mfLong  = mfSide == MF_EITHER ? math.abs(mf) > mfLevel : mfSide == MF_AGAINST ? mf < -mfLevel : mf > mfLevel
+mfShort = mfSide == MF_EITHER ? math.abs(mf) > mfLevel : mfSide == MF_AGAINST ? mf > mfLevel : mf < -mfLevel
+
+// Wave condition: long dots sit below zero, short dots above zero
+waveLong  = waveZone == WAVE_BEYOND ? wave <= -waveLimit : wave < 0 and wave >= -waveLimit
+waveShort = waveZone == WAVE_BEYOND ? wave >= waveLimit : wave > 0 and wave <= waveLimit
+
+rawLong  = linkedB and linkedSR and barstate.isconfirmed and fired(greenDot) and mfLong and waveLong
+rawShort = linkedB and linkedSR and barstate.isconfirmed and fired(redDot) and mfShort and waveShort
+
+// Price in whole ticks
+ticks(float p) => math.round(p / syminfo.mintick)
+
+// ---- Free Cipher levels -----------------------------------------------------
+var levels    = array.new<float>()
+var levelBars = array.new<int>()
+
+addLevel(float lvl) =>
+    if not na(lvl)
+        array.push(levels, lvl)
+        array.push(levelBars, bar_index)
+        if array.size(levels) > maxLevels
+            array.shift(levels)
+            array.shift(levelBars)
+
+// A level is used up once a later bar trades through it.
+if array.size(levels) > 0
+    for i = array.size(levels) - 1 to 0
+        lvl = array.get(levels, i)
+        if array.get(levelBars, i) < bar_index and low <= lvl and high >= lvl
+            array.remove(levels, i)
+            array.remove(levelBars, i)
+
+// Record a level on the bar MarketCipher_SR first plots it.
+if linkedSR
+    if not na(cipherRes) and cipherRes != nz(cipherRes[1])
+        addLevel(cipherRes)
+    if not na(cipherSup) and cipherSup != nz(cipherSup[1])
+        addLevel(cipherSup)
+
+// Distinct free levels above (dir = 1) or below (dir = -1) a price, nearest first.
+beyondLevels(float price, int dir) =>
+    out = array.new<float>()
+    for lvl in levels
+        if (dir == 1 ? lvl > price : lvl < price) and not array.includes(out, lvl)
+            array.push(out, lvl)
+    array.sort(out, dir == 1 ? order.ascending : order.descending)
+    out
+
+// Nth free level beyond a price, or na.
+nthLevel(float price, int dir, int n) =>
+    b = beyondLevels(price, dir)
+    array.size(b) >= n ? array.get(b, n - 1) : na
+
+// Nearest free level beyond a price that is at least needTicks away, or na.
+levelAtLeast(float price, int dir, float needTicks) =>
+    float out = na
+    for lvl in beyondLevels(price, dir)
+        if na(out) and math.abs(ticks(lvl) - ticks(price)) >= needTicks - 1e-9
+            out := lvl
+    out
+
+// ---- Signals with their exits -----------------------------------------------
+// The order fills at the next bar's open, so the signal bar's close stands in for the entry.
+// Lowest low (dir = 1) or highest high (dir = -1) of the last swingBars bars, fewer on the
+// first bars of the chart.
+swingExtreme(int dir) =>
+    len = math.min(swingBars, bar_index + 1)
+    float ext = na
+    for k = 0 to len - 1
+        x = dir == 1 ? low[k] : high[k]
+        ext := na(ext) ? x : dir == 1 ? math.min(ext, x) : math.max(ext, x)
+    ext
+
+stopFor(int dir) =>
+    base = slMode == SL_SWING ? swingExtreme(dir) : nthLevel(close, -dir, slLevelN)
+    na(base) ? na : (ticks(base) - dir * stopTicks) * syminfo.mintick
+
+// K times the risk, rounded down to a tick so the target sits toward the entry. na when that
+// is less than one tick.
+rrLevel(float stop, int dir) =>
+    n = math.floor(rrTarget * math.abs(ticks(close) - ticks(stop)) + 1e-9)
+    n == 0 ? na : close + dir * n * syminfo.mintick
+
+targetFor(float stop, int dir) =>
+    if na(stop)
+        float(na)
+    else if tpMode == TP_RR
+        rrLevel(stop, dir)
+    else if tpMode == TP_LEVEL
+        nthLevel(close, dir, tpLevelN)
+    else
+        levelAtLeast(close, dir, rrTarget * math.abs(ticks(close) - ticks(stop)))
+
+rrOk(float target, float stop) =>
+    riskTicks = math.abs(ticks(close) - ticks(stop))
+    minRR == 0 or (riskTicks > 0 and math.abs(ticks(target) - ticks(close)) >= minRR * riskTicks - 1e-9)
+
+longStopNow    = stopFor(1)
+shortStopNow   = stopFor(-1)
+longTargetNow  = targetFor(longStopNow, 1)
+shortTargetNow = targetFor(shortStopNow, -1)
+
+longSignal  = rawLong and not na(longTargetNow) and rrOk(longTargetNow, longStopNow)
+shortSignal = rawShort and not na(shortTargetNow) and rrOk(shortTargetNow, shortStopNow)
+
+var float longStop    = na
+var float longTarget  = na
+var float shortStop   = na
+var float shortTarget = na
+
+flat = strategy.position_size == 0
+
+if longSignal
+    if allowLong and (flat or (flipExit and strategy.position_size < 0))
+        longStop   := longStopNow
+        longTarget := longTargetNow
+        strategy.entry("Long", strategy.long)
+    else if flipExit and strategy.position_size < 0
+        strategy.close("Short", comment = "Opposite signal")
+
+if shortSignal
+    if allowShort and (flat or (flipExit and strategy.position_size > 0))
+        shortStop   := shortStopNow
+        shortTarget := shortTargetNow
+        strategy.entry("Short", strategy.short)
+    else if flipExit and strategy.position_size > 0
+        strategy.close("Long", comment = "Opposite signal")
+
+if not na(longStop)
+    strategy.exit("Long exit", "Long", stop = longStop, limit = longTarget)
+if not na(shortStop)
+    strategy.exit("Short exit", "Short", stop = shortStop, limit = shortTarget)
+
+inLong  = strategy.position_size > 0
+inShort = strategy.position_size < 0
+
+plotshape(longSignal, "Long signal", shape.triangleup, location.belowbar, color.lime, size = size.tiny)
+plotshape(shortSignal, "Short signal", shape.triangledown, location.abovebar, color.red, size = size.tiny)
+plot(inLong ? longTarget : na, "Long target", color.lime, style = plot.style_linebr)
+plot(inLong ? longStop : na, "Long stop", color.red, style = plot.style_linebr)
+plot(inShort ? shortTarget : na, "Short target", color.lime, style = plot.style_linebr)
+plot(inShort ? shortStop : na, "Short stop", color.red, style = plot.style_linebr)
+
+var table warn = table.new(position.top_right, 1, 1)
+if barstate.islast and not (linkedB and linkedSR)
+    table.cell(warn, 0, 0, "Link the MarketCipher_B and MarketCipher_SR sources in Settings > Inputs",
+         text_color = color.white, bgcolor = color.red)
