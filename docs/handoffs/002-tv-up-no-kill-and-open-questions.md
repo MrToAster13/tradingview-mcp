@@ -29,7 +29,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 
 ## Open questions for Elijah
 1. package-lock.json drift with no package.json change: (a) discard or (b) commit.
-2. `docs/handoffs/001-tradingview-mcp-persistence.md`, which is stale and contains the tailnet IP and SSH details: (a) keep it local and update it to the Funnel design, (b) delete it, or (c) commit a redacted copy.
+2. Answered 2026-10-26: (a). `docs/handoffs/001-tradingview-mcp-persistence.md` stays local, is listed in `.git/info/exclude`, and now describes the Funnel design.
 3. Funnel: (a) keep it on and put `/health` behind the key, (b) keep it on as is, or (c) go tailnet-only, which breaks Hermes until Hermes moves to the tailnet.
 4. Forward check-ins: (a) switch the chart to MES1! 15m (or allow me to), run now, and schedule twice a day with T3 `schedule_task`, (b) run once, or (c) drop the forward test.
 5. backtest/mc-basic-1m: (a) keep it local, (b) move the home path and layout id into env vars, regenerate the reports at the $1 fee, re-audit and push, or (c) push it to a private repo.
@@ -38,6 +38,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 - Never push backtest/mc-basic-1m to the public fork as it stands, because commit 6aa97f4 says "do not push". `scripts/mc_basic_1m/store.mjs:11` has a home path, and `cdp.mjs:14-15`, `templates.mjs:21` and `lint.test.mjs` have the layout id.
 - Don't touch the live chart without Elijah's yes (question 4).
 - Never commit `docs/handoffs/001`, because the fork is public and that doc has the IP and SSH details.
+- The logon script `tv-proxy/start-tv-mcp.ps1` runs `scripts/tv_up.js` from whatever branch is checked out. On `backtest/mc-basic-1m`, which lacks the no-kill fix, it force-kills a TradingView that is open without CDP at sign-in. Handoff 001 has the details and the fix options.
 - Push only to the `fork` remote (MrToAster13). `origin` is upstream.
 
 ## Relevant files

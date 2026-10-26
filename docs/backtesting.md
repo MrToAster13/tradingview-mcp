@@ -104,7 +104,7 @@ To let him correct a rule by hand, for example moving each target to where it sh
 - Create each one with `createMultipointShape([{ time: entry, price }, { time: end, price }], { shape: 'long_position' or 'short_position', overrides: { stopLevel, profitLevel } })`, levels in ticks. Then read the shape back with `getShapeById(id).getPoints()` and `getProperties()` and remove it if the time, price or ticks differ.
 - A shape whose time is before the first loaded bar snaps both points to that bar. The live 1m chart holds about 15,000 bars, so anything older than about two weeks needs a replay window. Start replay after the trade's exit, load history with `requestMoreData`, draw, then stop replay. Shapes drawn in replay keep their exact time after replay stops. He then needs bar replay to see those trades on 1m.
 - Skip trades within 30 minutes of one of his own position drawings, and save every created id to a file. Read his edits back by id, and remove only those ids when cleaning up.
-- The 2026-10-26 run drew 100 MC B dot v2 trades this way. Handoff 003 has the details and the read-back steps.
+- The 2026-10-26 run drew 100 MC B dot v2 trades this way. Handoff 004 has the details and the read-back steps.
 
 ## Process
 

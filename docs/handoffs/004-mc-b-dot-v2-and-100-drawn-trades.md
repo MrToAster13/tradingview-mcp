@@ -1,4 +1,4 @@
-# Handoff 003: MC B dot v2, the R:R study, and 100 v2 trades drawn for Elijah to set targets
+# Handoff 004: MC B dot v2, the R:R study, and 100 v2 trades drawn for Elijah to set targets
 
 Status: waiting on Elijah. He is moving the targets on the 100 drawn trades by hand. The next session reads them back.
 
