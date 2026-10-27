@@ -18,6 +18,14 @@ export function registerAlertTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
+  server.tool('alert_copy', 'Copy an existing alert, including an indicator (study) alert, to a new resolution. Keeps the symbol, script, inputs, condition, message and notification settings', {
+    alert_id: z.coerce.number().describe('Id of the alert to copy (from alert_list)'),
+    resolution: z.string().describe('Resolution for the copy: minutes such as "15" or "240", or "1D", "1W", "1M"'),
+  }, async ({ alert_id, resolution }) => {
+    try { return jsonResult(await core.copy({ alert_id, resolution })); }
+    catch (err) { return jsonResult({ success: false, error: err.message }, true); }
+  });
+
   server.tool('alert_delete', 'Delete a specific alert by id, or all active alerts', {
     alert_id: z.coerce.number().optional().describe('Alert id to delete (from alert_list)'),
     delete_all: bool.optional().describe('Delete all active alerts'),

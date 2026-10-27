@@ -126,3 +126,83 @@ export async function deleteAlerts({ delete_all, alert_ids, alert_id } = {}) {
   }
   return { success: false, source: 'internal_api', alert_ids: ids, error: (result && (result.error || result.response)) || 'delete failed' };
 }
+
+// Minutes ("15", "240"), or a count and unit ("1D", "1W", "30S"), or a bare unit ("D").
+const RESOLUTION_RE = /^(\d+[SDWM]?|[SDWM])$/;
+
+// Fields copied from the source alert unchanged: symbol, message and the
+// notification settings. Conditions and resolution are set separately.
+const COPIED_FIELDS = [
+  'symbol', 'message', 'name', 'web_hook', 'expiration', 'auto_deactivate',
+  'email', 'sms_over_email', 'mobile_push', 'popup', 'sound_file', 'sound_duration',
+  'presentation_data',
+];
+
+// The pricealerts calls copy() makes, run inside TradingView Desktop with its session.
+const pageApi = {
+  async listAlerts() {
+    const data = await evaluateAsync(`
+      fetch('https://pricealerts.tradingview.com/list_alerts', { credentials: 'include' })
+        .then(function(r) { return r.json(); })
+    `);
+    if (!data || data.s !== 'ok' || !Array.isArray(data.r)) {
+      throw new Error((data && data.errmsg) || 'list_alerts returned an unexpected response');
+    }
+    return data.r;
+  },
+  async createAlert(payload) {
+    return evaluate(`
+      (function() {
+        var x = new XMLHttpRequest();
+        x.open('POST', 'https://pricealerts.tradingview.com/create_alert', false);
+        x.withCredentials = true;
+        x.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
+        x.send(JSON.stringify({ payload: ${JSON.stringify(payload)} }));
+        try { return JSON.parse(x.responseText); } catch (e) { return { s: 'error', errmsg: 'HTTP ' + x.status }; }
+      })()
+    `);
+  },
+};
+
+/**
+ * Copy an existing alert, including a study alert on a Pine indicator, to a
+ * new resolution. The copy keeps the symbol, script, inputs, condition,
+ * message and notification settings. Nothing is created when the alert is
+ * not found or the resolution is not valid.
+ */
+export async function copy({ alert_id, resolution }, api = pageApi) {
+  const res = String(resolution ?? '').trim();
+  if (!RESOLUTION_RE.test(res)) {
+    return { success: false, source: 'internal_api', error: `Invalid resolution ${JSON.stringify(resolution)}: use minutes such as "15" or "240", or "1D", "1W", "1M"` };
+  }
+  const id = Number(alert_id);
+  const source = (await api.listAlerts()).find((a) => a.alert_id === id);
+  if (!source) {
+    return { success: false, source: 'internal_api', error: `Alert ${alert_id} not found` };
+  }
+
+  const conditions = (Array.isArray(source.conditions) && source.conditions.length ? source.conditions : [source.condition])
+    .filter((c) => c && typeof c === 'object');
+  if (!conditions.length) {
+    return { success: false, source: 'internal_api', source_alert_id: id, error: `Alert ${alert_id} has no condition to copy` };
+  }
+  const payload = {};
+  for (const field of COPIED_FIELDS) {
+    if (source[field] !== undefined) payload[field] = structuredClone(source[field]);
+  }
+  // A source that has expired, or has no expiration, would hand the copy a
+  // dead date. Give it the same 30 days create() uses.
+  if (!(Date.parse(payload.expiration) > Date.now())) {
+    payload.expiration = new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString();
+  }
+  payload.conditions = conditions.map((c) => ({ ...structuredClone(c), resolution: res }));
+  payload.resolution = res;
+  payload.active = true;
+  payload.ignore_warnings = true;
+
+  const data = await api.createAlert(payload);
+  if (data && data.s === 'ok') {
+    return { success: true, source: 'internal_api', alert_id: (data.r && data.r.alert_id) || null, source_alert_id: id, resolution: res };
+  }
+  return { success: false, source: 'internal_api', source_alert_id: id, error: (data && ((data.err && data.err.code) || data.errmsg)) || 'create_alert failed' };
+}
