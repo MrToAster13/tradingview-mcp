@@ -82,6 +82,7 @@ describe('alert_copy', () => {
     assert.equal(p.email, false);
     assert.equal(p.auto_deactivate, false);
     assert.equal(p.active, true);
+    assert.equal(p.expiration, '2026-11-23T20:57:53Z');
   });
 
   it('reports the new alert id and resolution when TradingView accepts the copy', async () => {
