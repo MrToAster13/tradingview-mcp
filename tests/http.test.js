@@ -16,6 +16,7 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { startHttpServer, readHttpConfig, main } from '../src/http.js';
 import { createServer } from '../src/create_server.js';
+import { tailscaleSync } from '../src/funnel.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SERVER_JS = join(ROOT, 'src', 'server.js');
@@ -147,29 +148,42 @@ describe('http mode — auth and routing', () => {
   });
 });
 
-describe('http mode — tools/list parity with stdio', () => {
-  let s;
-  before(async () => { s = await startTestServer(); });
-  after(async () => { await s.handle.close(); });
+// ELI-756: tools that run arbitrary code or drive the desktop are stdio-only.
+const HTTP_BLOCKED = ['ui_evaluate', 'tv_update', 'tv_launch', 'ui_type_text', 'ui_mouse_click', 'ui_keyboard'];
 
-  it('correct key → tools/list returns the same tools as the stdio server', async () => {
+describe('http mode — tools/list versus stdio', () => {
+  let s;
+  let httpTools;
+  let stdioTools;
+  before(async () => {
+    s = await startTestServer();
     const httpClient = new Client({ name: 'http-test', version: '0' });
     await httpClient.connect(new StreamableHTTPClientTransport(new URL(`${s.base}/mcp`), {
       requestInit: { headers: { Authorization: `Bearer ${KEY}` } },
     }));
-    const httpTools = (await httpClient.listTools()).tools.map((t) => t.name).sort();
+    httpTools = (await httpClient.listTools()).tools.map((t) => t.name).sort();
     await httpClient.close();
 
     const stdioClient = new Client({ name: 'stdio-test', version: '0' });
     await stdioClient.connect(new StdioClientTransport({
       command: process.execPath, args: [SERVER_JS], cwd: ROOT, stderr: 'ignore',
     }));
-    const stdioTools = (await stdioClient.listTools()).tools.map((t) => t.name).sort();
+    stdioTools = (await stdioClient.listTools()).tools.map((t) => t.name).sort();
     await stdioClient.close();
+  });
+  after(async () => { await s.handle.close(); });
 
-    assert.ok(stdioTools.length > 0);
-    assert.equal(httpTools.length, stdioTools.length);
-    assert.deepEqual(httpTools, stdioTools);
+  it('HTTP mode does not register ui_evaluate, tv_update, tv_launch, ui_type_text, ui_mouse_click or ui_keyboard', () => {
+    for (const name of HTTP_BLOCKED) assert.ok(!httpTools.includes(name), `${name} is exposed over HTTP`);
+  });
+
+  it('stdio mode still registers all six', () => {
+    for (const name of HTTP_BLOCKED) assert.ok(stdioTools.includes(name), `${name} missing from stdio`);
+  });
+
+  it('HTTP mode registers every other stdio tool', () => {
+    assert.ok(stdioTools.length > HTTP_BLOCKED.length);
+    assert.deepEqual(httpTools, stdioTools.filter((n) => !HTTP_BLOCKED.includes(n)));
   });
 
   it('createServer() builds a fresh server each call', () => {
@@ -236,6 +250,130 @@ describe('http mode — idle shutdown', () => {
     await new Promise((r) => setImmediate(r)); // let the response 'close' event land
     s.clock.advance(15 * MINUTE + 1);
     assert.deepEqual(s.exits, [0]);
+  });
+});
+
+// ── ELI-756: turn off the Funnel that tv_up.js opened when the server stops ──
+
+const DNS = 'box.tail0000.ts.net';
+// Checked against tailscale v1.102.4 cmd/tailscale/cli/serve_v2.go: "off" needs
+// no --bg (wantFg := !e.bg.Value && !turnOff) and removes only the --https port.
+const FUNNEL_OFF = ['funnel', '--https=8443', 'off'];
+
+/** `tailscale funnel status --json` as tv_up.js leaves it: :8443 funneled to loopback:<port>. */
+function funnelStatus(port, { allowFunnel = true } = {}) {
+  return {
+    TCP: { 443: { HTTPS: true }, 8443: { HTTPS: true } },
+    Web: {
+      [`${DNS}:443`]: { Handlers: { '/': { Proxy: 'http://127.0.0.1:3773' } } },
+      [`${DNS}:8443`]: { Handlers: { '/': { Proxy: `http://127.0.0.1:${port}` } } },
+    },
+    ...(allowFunnel && { AllowFunnel: { [`${DNS}:8443`]: true } }),
+  };
+}
+
+/**
+ * Starts main() on an ephemeral port with every side effect faked. `status`
+ * is called with the bound port each time the fake `tailscale funnel status`
+ * runs. Nothing here runs the real tailscale CLI or touches process signals.
+ */
+async function startMain({ status = (port) => funnelStatus(port), tailscaleThrows = null } = {}) {
+  const w = { logs: [], exits: [], tailscaleCalls: [], signals: new Map(), clock: fakeClock(), port: null };
+  const tailscaleSync = (args) => {
+    w.tailscaleCalls.push(args);
+    if (tailscaleThrows) throw tailscaleThrows;
+    if (args[0] === 'funnel' && args[1] === 'status') return JSON.stringify(status(w.port));
+    return '';
+  };
+  w.handle = await main({
+    env: { TV_MCP_API_KEY: KEY, TV_MCP_HTTP_PORT: '0', TV_MCP_IDLE_MINUTES: '15' },
+    _deps: {
+      setTimeout: w.clock.setTimeout,
+      clearTimeout: w.clock.clearTimeout,
+      exit: (code) => w.exits.push(code),
+      log: (line) => w.logs.push(line),
+      tailscaleSync,
+      onSignal: (sig, fn) => w.signals.set(sig, fn),
+    },
+  });
+  w.port = w.handle.port;
+  return w;
+}
+
+const offCalls = (w) => w.tailscaleCalls.filter((a) => a.join(' ') === FUNNEL_OFF.join(' '));
+
+describe('http mode — Funnel is turned off when the server stops', () => {
+  it('idle shutdown turns off the :8443 Funnel that points at this server, then exits 0', async () => {
+    const w = await startMain();
+    try {
+      assert.equal(offCalls(w).length, 0, 'turned the Funnel off at startup');
+      w.clock.advance(15 * MINUTE + 1);
+      assert.equal(offCalls(w).length, 1);
+      assert.deepEqual(w.exits, [0]);
+      assert.equal(w.handle.server.listening, false);
+    } finally { await w.handle.close(); }
+  });
+
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    it(`${sig} turns off the Funnel, stops the server and exits`, async () => {
+      const w = await startMain();
+      try {
+        assert.equal(typeof w.signals.get(sig), 'function', `no ${sig} handler registered`);
+        w.signals.get(sig)();
+        assert.equal(offCalls(w).length, 1);
+        assert.equal(w.exits.length, 1);
+        await new Promise((r) => setImmediate(r));
+        assert.equal(w.handle.server.listening, false);
+      } finally { await w.handle.close(); }
+    });
+  }
+
+  it('turns the Funnel off only once when a signal follows the idle shutdown', async () => {
+    const w = await startMain();
+    try {
+      w.clock.advance(15 * MINUTE + 1);
+      w.signals.get('SIGTERM')();
+      assert.equal(offCalls(w).length, 1);
+    } finally { await w.handle.close(); }
+  });
+
+  it('leaves :8443 alone when it points at a different port', async () => {
+    const w = await startMain({ status: (port) => funnelStatus(port + 1) });
+    try {
+      w.clock.advance(15 * MINUTE + 1);
+      assert.equal(offCalls(w).length, 0);
+      assert.deepEqual(w.exits, [0]);
+    } finally { await w.handle.close(); }
+  });
+
+  it('does nothing when no Funnel is on :8443', async () => {
+    const w = await startMain({ status: () => ({ TCP: { 443: { HTTPS: true } } }) });
+    try {
+      w.clock.advance(15 * MINUTE + 1);
+      assert.equal(offCalls(w).length, 0);
+      assert.deepEqual(w.exits, [0]);
+    } finally { await w.handle.close(); }
+  });
+
+  it('both tailscale calls (status, then off) fit inside Windows\' ~10 s SIGHUP grace period', () => {
+    // Node docs (process.md, Signal events): after SIGHUP "Node.js will be
+    // unconditionally terminated by Windows about 10 seconds later".
+    const timeouts = [];
+    const exec = (file, args, opts) => { timeouts.push(opts.timeout); return '{}'; };
+    tailscaleSync(['funnel', 'status', '--json'], { exec });
+    tailscaleSync(FUNNEL_OFF, { exec });
+    assert.ok(timeouts.every((t) => Number.isFinite(t) && t > 0), 'every call needs a timeout');
+    assert.ok(timeouts[0] + timeouts[1] < 10_000, `status + off can take ${timeouts[0] + timeouts[1]} ms`);
+  });
+
+  it('still exits 0 and logs when the tailscale CLI is missing', async () => {
+    const err = Object.assign(new Error('spawnSync tailscale ENOENT'), { code: 'ENOENT' });
+    const w = await startMain({ tailscaleThrows: err });
+    try {
+      w.clock.advance(15 * MINUTE + 1);
+      assert.deepEqual(w.exits, [0]);
+      assert.ok(w.logs.some((l) => /tailscale/i.test(l)), 'no log line about tailscale');
+    } finally { await w.handle.close(); }
   });
 });
 
