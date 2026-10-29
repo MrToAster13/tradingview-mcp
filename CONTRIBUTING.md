@@ -19,7 +19,7 @@ This tool is a **local bridge** between Claude Code and the TradingView Desktop 
 
 Contributions **must not** add features that:
 
-- **Connect directly to TradingView's servers** — all data access must go through the locally running Desktop app via CDP
+- **Add new direct calls to TradingView's servers from the Node process.** New data access goes through the locally running Desktop app via CDP. The existing calls are listed in the README under "Network calls to TradingView servers": `pine_check` and `symbol_search` call from Node, and the alert, saved-script and watchlist tools call from the app session. A change that adds a TradingView host must add it to that table, or `tests/network_hosts.test.js` fails.
 - **Bypass authentication or subscription restrictions** — this tool requires a valid TradingView account and subscription
 - **Scrape, cache, or redistribute market data** — no data storage, no databases, no export-to-CSV of price data
 - **Enable automated trading or order execution** — this is a chart reading/development tool, not a trading bot framework
