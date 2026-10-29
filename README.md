@@ -1,6 +1,7 @@
 # TradingView MCP Bridge
 
-[![MCP Toplist](https://mcptoplist.com/badge/glama%2Ftradesdontlie%2Ftradingview-mcp.svg)](https://mcptoplist.com/server/glama%2Ftradesdontlie%2Ftradingview-mcp)
+> [!NOTE]
+> This repo, [MrToAster13/tradingview-mcp](https://github.com/MrToAster13/tradingview-mcp), is a fork of [tradesdontlie/tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp). It adds tools upstream does not have, such as `draw_trades_from_csv`, `alert_copy`, HTTP mode and the combo tester. Clone this fork, not upstream. `tv_update` refuses to run when `origin` is not this fork.
 
 Personal AI assistant for your TradingView Desktop charts. Connects Claude Code to your locally running TradingView app via Chrome DevTools Protocol for AI-assisted chart analysis, Pine Script development, and workflow automation.
 
@@ -11,20 +12,34 @@ Personal AI assistant for your TradingView Desktop charts. Connects Claude Code 
 > **Requires a valid TradingView subscription.** This tool does not bypass or circumvent any TradingView paywall or access control. It reads from and controls the TradingView Desktop app already running on your machine.
 
 > [!NOTE]
-> **All data processing occurs locally on your machine.** No TradingView data is transmitted, stored, or redistributed externally by this tool.
+> **Data processing occurs on your machine.** This tool does not store or redistribute TradingView data. A few tools send requests to TradingView servers, and `pine_check` sends your Pine source there; see [Network calls to TradingView servers](#network-calls-to-tradingview-servers).
 
 > [!CAUTION]
 > This tool accesses undocumented internal TradingView APIs via the Electron debug interface. These can change or break without notice in any TradingView update. Pin your TradingView Desktop version if stability matters to you.
 
 ## How It Works (and why it's safe to run)
 
-This tool does not connect to TradingView's servers, modify any TradingView files, or intercept any network traffic. It communicates exclusively with your locally running TradingView Desktop instance via Chrome DevTools Protocol (CDP) — a standard debugging interface built into all Chromium/Electron applications by Google, including VS Code, Slack, and Discord.
+Most tools talk only to your locally running TradingView Desktop instance via Chrome DevTools Protocol (CDP), a debugging interface built into Chromium and Electron apps such as VS Code, Slack and Discord. The tool does not modify TradingView files or intercept network traffic. A few tools do send requests to TradingView servers; the next section lists them.
 
 The debug port is disabled by default and must be explicitly enabled by you using a standard Chromium flag (`--remote-debugging-port=9222`). Nothing happens without that deliberate step.
 
+## Network calls to TradingView servers
+
+These tools send requests to TradingView servers themselves. A call from the Node process leaves your machine from this server, without the desktop app and without your login. A call from the app session runs inside TradingView Desktop through CDP, so it carries your TradingView cookies.
+
+| Tool (and CLI command) | Host | Sends | Leaves from |
+|------|------|-------|-------------|
+| `pine_check` (`tv pine check`) | `pine-facade.tradingview.com` | The full Pine source you pass, as user `Guest` | Node process |
+| `symbol_search` (`tv search`) | `symbol-search.tradingview.com` | The search text and type filter, with an Origin and Referer of `www.tradingview.com` | Node process |
+| `pine_list_scripts`, `pine_open` | `pine-facade.tradingview.com` | Requests for your saved script list and one script's source | app session |
+| `alert_create`, `alert_list`, `alert_copy`, `alert_delete` | `pricealerts.tradingview.com` | Alert conditions, prices, messages and alert ids | app session |
+| `watchlist_remove` | `www.tradingview.com` | The watchlist id and the symbols to remove | app session |
+
+Every other tool drives the desktop app's UI or reads its in-page state. The app then makes its own normal requests, such as loading bars after `chart_set_symbol`; this tool does not add to those. `tests/network_hosts.test.js` fails when the code gains a TradingView host this table does not name.
+
 ## What This Tool Does Not Do
 
-- Connect to TradingView's servers or APIs
+- Connect to TradingView's servers, except for the tools listed under [Network calls to TradingView servers](#network-calls-to-tradingview-servers)
 - Store, transmit, or redistribute any market data
 - Work without a valid TradingView subscription and installed Desktop app
 - Bypass any TradingView paywall or access restriction
@@ -74,7 +89,7 @@ Gives your AI assistant eyes and hands on your own chart:
 
 Paste this into Claude Code and it will handle the rest:
 
-> Install the TradingView MCP server. Clone https://github.com/tradesdontlie/tradingview-mcp.git, run npm install, add it to my MCP config at ~/.claude/.mcp.json, and launch TradingView with the debug port. Then verify the connection with tv_health_check.
+> Install the TradingView MCP server. Clone https://github.com/MrToAster13/tradingview-mcp.git, run npm install, add it to my MCP config at ~/.claude/.mcp.json, and launch TradingView with the debug port. Then verify the connection with tv_health_check.
 
 Or follow the manual steps below.
 
@@ -83,7 +98,7 @@ Or follow the manual steps below.
 ### 1. Install
 
 ```bash
-git clone https://github.com/tradesdontlie/tradingview-mcp.git
+git clone https://github.com/MrToAster13/tradingview-mcp.git
 cd tradingview-mcp
 npm install
 ```
@@ -91,6 +106,13 @@ npm install
 ### 2. Launch TradingView with CDP
 
 TradingView Desktop must be running with Chrome DevTools Protocol enabled on port 9222.
+
+None of these paths kills a running TradingView by default. Each one first checks whether TradingView already answers on the port and stops there if it does. If TradingView runs without the debug port, the scripts and `tv_launch` stop with an error and start nothing. Close TradingView yourself and re-run, or opt in to the kill with `KILL_EXISTING=1` (scripts) or `kill_existing: true` (`tv_launch`).
+
+**Easiest: use the MCP tool** (auto-detects your install):
+> "Use tv_launch to start TradingView in debug mode"
+
+**For the remote HTTP stack** (HTTP server plus Tailscale Funnel), run `node scripts/tv_up.js`. It launches TradingView only when none is running.
 
 **Mac:**
 ```bash
@@ -111,9 +133,6 @@ scripts\launch_tv_debug.bat
 ```bash
 /path/to/TradingView --remote-debugging-port=9222
 ```
-
-**Or use the MCP tool** (auto-detects your install):
-> "Use tv_launch to start TradingView in debug mode"
 
 ### 3. Add to Claude Code
 
@@ -200,6 +219,21 @@ tv stream tables --filter Profiler       # table data monitoring
 tv stream all                            # all panes at once (multi-symbol)
 ```
 
+## HTTP mode
+
+`node src/server.js --http` serves MCP over Streamable HTTP on `127.0.0.1:8765` (`TV_MCP_HTTP_PORT`), with `POST /mcp` behind a bearer key in `TV_MCP_API_KEY` (at least 32 characters) and an unauthenticated `GET /health`. `scripts/tv_up.js` starts it and can put it on the internet through Tailscale Funnel on port 8443.
+
+Because that port can be public, HTTP mode registers every tool except these six, which stay stdio-only:
+
+| Tool | Why it is stdio-only |
+|------|----------------------|
+| `ui_evaluate` | Runs any JavaScript in the logged-in TradingView page |
+| `tv_update` | Fetches code and runs `npm ci` on the host |
+| `tv_launch` | Starts, and can kill, TradingView on the host |
+| `ui_type_text`, `ui_mouse_click`, `ui_keyboard` | Drive the desktop app's input |
+
+The list lives in `HTTP_BLOCKED_TOOLS` in `src/create_server.js`, and `tests/http.test.js` checks that `tools/list` in HTTP mode leaves them out. A failed login logs the socket address plus the `X-Forwarded-For` and `Tailscale-User-Login` headers when the proxy sends them, because behind Funnel the socket address is always loopback.
+
 ## How Claude Knows Which Tool to Use
 
 Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project. It contains a complete decision tree:
@@ -217,7 +251,7 @@ Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project
 | "Draw a level at 24500" | `draw_shape` (horizontal_line) |
 | "Take a screenshot" | `capture_screenshot` |
 
-## Tool Reference (78 MCP tools)
+## Tool Reference (86 MCP tools)
 
 ### Chart Reading
 
@@ -227,6 +261,9 @@ Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project
 | `data_get_study_values` | Read current RSI, MACD, BB, EMA values from all indicators | ~500B |
 | `quote_get` | Get latest price, OHLC, volume | ~200B |
 | `data_get_ohlcv` | Get price bars. **Use `summary: true`** for compact stats | 500B (summary) / 8KB (100 bars) |
+| `data_get_indicator` | Read one indicator's info and input values | ~500B |
+| `chart_get_visible_range` | Read the visible date range (unix timestamps) and bar range | ~200B |
+| `depth_get` | Read the order book / Depth of Market | varies |
 
 ### Custom Indicator Data (Pine Drawings)
 
@@ -241,6 +278,14 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 
 **Always use `study_filter`** to target a specific indicator: `study_filter: "Profiler"`.
 
+### Strategy Tester
+
+| Tool | What it does |
+|------|-------------|
+| `data_get_strategy_results` | Strategy performance metrics. Opens the panel and unhides a hidden strategy |
+| `data_get_trades` | Trade list from the Strategy Tester |
+| `data_get_equity` | Equity curve from the Strategy Tester |
+
 ### Chart Control
 
 | Tool | What it does |
@@ -253,6 +298,7 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 | `chart_set_visible_range` | Zoom to exact range (unix timestamps) |
 | `symbol_info` / `symbol_search` | Symbol metadata and search |
 | `indicator_set_inputs` / `indicator_toggle_visibility` | Change indicator settings, show/hide |
+| `indicator_search` / `indicator_add` | Search the Indicators dialog, including community scripts, and add a result by name |
 
 ### Multi-Pane Layouts
 
@@ -277,6 +323,7 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 |------|------|
 | `pine_set_source` | 1. Inject code into editor |
 | `pine_smart_compile` | 2. Compile with auto-detection + error check |
+| `pine_compile` | Compile or add the current script to the chart, without the auto-detection |
 | `pine_get_errors` | 3. Read compilation errors if any |
 | `pine_get_console` | 4. Read log.info() output |
 | `pine_save` | 5. Save to TradingView cloud |
@@ -303,14 +350,20 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 |------|-------------|
 | `draw_shape` | Draw horizontal_line, trend_line, rectangle, text |
 | `draw_list` / `draw_remove_one` / `draw_clear` | Manage drawings |
+| `draw_get_properties` | Read one drawing's properties and points |
+| `draw_trades_from_csv` | Draw a long/short position for each filled entry in the newest paper-trading CSV export in ~/Downloads |
 | `alert_create` / `alert_list` / `alert_delete` | Manage price alerts |
 | `alert_copy` | Copy an alert, including an indicator alert, to a new timeframe |
 | `capture_screenshot` | Screenshot (regions: full, chart, strategy_tester) |
 | `batch_run` | Run action across multiple symbols/timeframes |
-| `watchlist_get` / `watchlist_add` | Read/modify watchlist |
-| `layout_list` / `layout_switch` | Manage saved layouts |
-| `ui_open_panel` / `ui_click` / `ui_evaluate` | UI automation |
-| `tv_launch` / `tv_health_check` / `tv_discover` | Connection management |
+| `watchlist_get` / `watchlist_add` / `watchlist_add_bulk` / `watchlist_remove` | Read the watchlist, add one or many symbols, remove symbols |
+| `layout_list` / `layout_switch` / `layout_new` | List, switch to or create saved layouts |
+| `ui_open_panel` / `ui_click` / `ui_hover` / `ui_scroll` / `ui_fullscreen` | UI automation |
+| `ui_find_element` | Find UI elements by text, aria-label or CSS selector |
+| `ui_type_text` / `ui_keyboard` / `ui_mouse_click` | Type text, press keys, click at x,y (stdio only) |
+| `ui_evaluate` | Run JavaScript in the TradingView page (stdio only) |
+| `tv_launch` / `tv_health_check` / `tv_discover` / `tv_ui_state` | Connection management and UI state |
+| `tv_update` | Fast-forward this install from the fork's main and run `npm ci` when the lockfile changed (stdio only) |
 
 ## Context Management
 
@@ -342,11 +395,15 @@ The key flag: `--remote-debugging-port=9222`
 ## Testing
 
 ```bash
-# Requires TradingView running with --remote-debugging-port=9222
+# Offline: every tests/*.test.js except e2e. TradingView can be closed.
 npm test
+
+# Live: needs TradingView running with --remote-debugging-port. Reads
+# TV_CDP_HOST / TV_CDP_PORT like the server does (default 127.0.0.1:9222).
+npm run test:e2e
 ```
 
-29 tests covering: Pine Script static analysis, server-side compilation, and CLI routing.
+`npm test` runs `scripts/run_offline_tests.js`, which finds test files by name, so a new file under `tests/` runs in CI with no edit to `package.json`. `tests/docs_tools.test.js` fails when this README's tool tables or tool counts drift from the registered tools.
 
 ## Architecture
 
@@ -371,7 +428,7 @@ This tool is an independent MCP server that connects to Claude Code via the stan
 
 This project is provided **for personal, educational, and research purposes only**.
 
-**How this tool works:** This tool uses Chrome DevTools Protocol (CDP), the standard debugging interface built into Chromium-based applications. It does not reverse engineer any proprietary TradingView protocol, connect to TradingView's servers, or bypass any access controls. The debug port must be explicitly enabled by the user via a standard Chromium command-line flag (`--remote-debugging-port=9222`).
+**How this tool works:** This tool uses Chrome DevTools Protocol (CDP), the standard debugging interface built into Chromium-based applications. It does not reverse engineer any proprietary TradingView protocol or bypass any access controls. The tools listed under [Network calls to TradingView servers](#network-calls-to-tradingview-servers) are the only ones that send requests to TradingView servers. The debug port must be explicitly enabled by the user via a standard Chromium command-line flag (`--remote-debugging-port=9222`).
 
 By using this software, you acknowledge and agree that:
 
@@ -383,8 +440,8 @@ By using this software, you acknowledge and agree that:
    - Circumventing TradingView's access controls or subscription restrictions
    - Performing automated trading or algorithmic decision-making using extracted data
    - Violating the intellectual property rights of Pine Script indicator authors
-   - Connecting to TradingView's servers or infrastructure (all access is via the locally running Desktop app)
-5. The streaming functionality monitors your locally running TradingView Desktop instance only. It does not connect to TradingView's servers or extract data from TradingView's infrastructure.
+   - Connecting to TradingView's servers or infrastructure beyond the calls listed under [Network calls to TradingView servers](#network-calls-to-tradingview-servers)
+5. The streaming functionality polls only your locally running TradingView Desktop instance. It makes no requests to TradingView servers and does not extract data from TradingView's infrastructure.
 6. Market data accessed through this tool remains subject to exchange and data provider licensing terms. **Do not redistribute, store, or commercially exploit any data obtained through this tool.**
 7. This tool accesses internal, undocumented TradingView application interfaces that may change or break at any time without notice.
 

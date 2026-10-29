@@ -1,6 +1,8 @@
 /**
- * Comprehensive E2E tests for all 70 TradingView MCP tools.
- * Requires TradingView Desktop running with --remote-debugging-port=9222
+ * End-to-end tests for the TradingView MCP tools.
+ * Requires TradingView Desktop running with --remote-debugging-port. The CDP
+ * host and port come from src/connection.js, so TV_CDP_HOST/TV_CDP_PORT (or
+ * CDP_HOST/CDP_PORT) apply here too. Default 127.0.0.1:9222.
  *
  * Run: node --test tests/e2e.test.js
  *
@@ -22,6 +24,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import CDP from 'chrome-remote-interface';
+import { CDP_HOST, CDP_PORT } from '../src/connection.js';
 
 let client;
 let Runtime;
@@ -67,15 +70,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('TradingView MCP — Full E2E (70 tools)', () => {
+describe('TradingView MCP — Full E2E', () => {
 
   before(async () => {
     try {
-      const targets = await CDP.List({ host: 'localhost', port: 9222 });
+      const targets = await CDP.List({ host: CDP_HOST, port: CDP_PORT });
       const chartTarget = targets.find(t => t.url && t.url.includes('tradingview.com/chart'));
       if (!chartTarget) throw new Error('No TradingView chart target found');
 
-      client = await CDP({ host: 'localhost', port: 9222, target: chartTarget.id });
+      client = await CDP({ host: CDP_HOST, port: CDP_PORT, target: chartTarget.id });
       await client.Runtime.enable();
       await client.Page.enable();
       await client.DOM.enable();
@@ -83,7 +86,7 @@ describe('TradingView MCP — Full E2E (70 tools)', () => {
       Input = client.Input;
       Page = client.Page;
     } catch (err) {
-      console.error('Cannot connect to TradingView. Make sure it is running with --remote-debugging-port=9222');
+      console.error(`Cannot connect to TradingView at ${CDP_HOST}:${CDP_PORT}. Make sure it is running with --remote-debugging-port=${CDP_PORT}`);
       process.exit(1);
     }
   });

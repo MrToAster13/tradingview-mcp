@@ -103,6 +103,36 @@ describe('http mode — auth and routing', () => {
     assert.ok(!newLogs.includes(KEY), 'real key echoed to log');
   });
 
+  it('failed auth log names the forwarded client from X-Forwarded-For and Tailscale-User-Login (ELI-699)', async () => {
+    const before = s.logs.length;
+    const res = await fetch(`${s.base}/mcp`, {
+      method: 'POST',
+      headers: { ...mcpHeaders, Authorization: `Bearer ${WRONG_KEY}`, 'X-Forwarded-For': '203.0.113.7', 'Tailscale-User-Login': 'someone@example.com' },
+      body: initBody,
+    });
+    assert.equal(res.status, 401);
+    await res.json();
+    const line = s.logs.slice(before).find((l) => /auth failed/.test(l));
+    assert.ok(line, 'no auth failed line');
+    assert.match(line, /203\.0\.113\.7/);
+    assert.match(line, /someone@example\.com/);
+  });
+
+  it('failed auth log strips control characters from forwarded headers', async () => {
+    const before = s.logs.length;
+    const res = await fetch(`${s.base}/mcp`, {
+      method: 'POST',
+      headers: { ...mcpHeaders, 'X-Forwarded-For': '198.51.100.9\tforged [tv-mcp http] ok' },
+      body: initBody,
+    });
+    assert.equal(res.status, 401);
+    await res.json();
+    const line = s.logs.slice(before).find((l) => /auth failed/.test(l));
+    assert.ok(line, 'no auth failed line');
+    assert.match(line, /198\.51\.100\.9/);
+    assert.ok(!/\t/.test(line), 'tab kept in log line');
+  });
+
   it('wrong key of a different length → 401 (hash compare, no length throw)', async () => {
     const res = await fetch(`${s.base}/mcp`, {
       method: 'POST', headers: { ...mcpHeaders, Authorization: 'Bearer x' }, body: initBody,
