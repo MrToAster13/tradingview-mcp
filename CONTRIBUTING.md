@@ -38,11 +38,14 @@ If you're unsure whether a feature fits, open an issue to discuss before submitt
 
 ```bash
 npm install
+git config core.hooksPath scripts/hooks  # once per clone: refuse pushes of commits marked "do not push"
 npm run lint      # eslint — the no-undef guard catches unfinished refactors
-npm run test:unit # offline unit tests (no TradingView needed)
+npm test          # every offline test file (no TradingView needed)
 npm run test:e2e  # requires TradingView running with CDP on port 9222
 tv status         # verify CDP connection (TradingView must be running)
 ```
+
+A commit message that says "do not push" (or "don't push", "do-not-push") keeps that commit local. The pre-push hook in `scripts/hooks` refuses the push, and CI fails a pull request that carries one. Put private paths and ids in an untracked file instead of relying on the message.
 
 Core functions take an optional `_deps` parameter resolved via `_resolve(_deps)` so they're unit-testable — see `src/core/replay.js` or `src/core/health.js` for the pattern.
 

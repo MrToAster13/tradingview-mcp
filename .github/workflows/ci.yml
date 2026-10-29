@@ -34,3 +34,15 @@ jobs:
 
       - name: Audit (high severity)
         run: npm audit --audit-level=high
+
+  no-push-marker:
+    # Fails a pull request that carries a commit whose message says do not
+    # push. Same check as scripts/hooks/pre-push (ELI-694).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit messages
+        run: scripts/hooks/check-no-push "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
