@@ -200,6 +200,21 @@ tv stream tables --filter Profiler       # table data monitoring
 tv stream all                            # all panes at once (multi-symbol)
 ```
 
+## HTTP mode
+
+`node src/server.js --http` serves MCP over Streamable HTTP on `127.0.0.1:8765` (`TV_MCP_HTTP_PORT`), with `POST /mcp` behind a bearer key in `TV_MCP_API_KEY` (at least 32 characters) and an unauthenticated `GET /health`. `scripts/tv_up.js` starts it and can put it on the internet through Tailscale Funnel on port 8443.
+
+Because that port can be public, HTTP mode registers every tool except these six, which stay stdio-only:
+
+| Tool | Why it is stdio-only |
+|------|----------------------|
+| `ui_evaluate` | Runs any JavaScript in the logged-in TradingView page |
+| `tv_update` | Fetches code and runs `npm ci` on the host |
+| `tv_launch` | Starts, and can kill, TradingView on the host |
+| `ui_type_text`, `ui_mouse_click`, `ui_keyboard` | Drive the desktop app's input |
+
+The list lives in `HTTP_BLOCKED_TOOLS` in `src/create_server.js`, and `tests/http.test.js` checks that `tools/list` in HTTP mode leaves them out. A failed login logs the socket address plus the `X-Forwarded-For` and `Tailscale-User-Login` headers when the proxy sends them, because behind Funnel the socket address is always loopback.
+
 ## How Claude Knows Which Tool to Use
 
 Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project. It contains a complete decision tree:

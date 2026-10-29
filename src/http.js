@@ -81,6 +81,19 @@ function sendJson(res, status, body, headers = {}) {
   res.end(JSON.stringify(body));
 }
 
+// Behind Tailscale Funnel the socket address is always loopback, so name the
+// client from the proxy's headers. Header values come from the network: keep
+// printable ASCII only and cap the length so a client cannot forge log lines.
+function clientLabel(req) {
+  const clean = (v) => String(Array.isArray(v) ? v.join(', ') : v).replace(/[^\x20-\x7e]/g, '').slice(0, 200);
+  const parts = [`socket ${req.socket.remoteAddress}`];
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) parts.push(`x-forwarded-for ${clean(fwd)}`);
+  const login = req.headers['tailscale-user-login'];
+  if (login) parts.push(`tailscale-user-login ${clean(login)}`);
+  return parts.join(', ');
+}
+
 const rpcError = (code, message) => ({ jsonrpc: '2.0', error: { code, message }, id: null });
 
 /**
@@ -147,7 +160,7 @@ export async function startHttpServer({
 
     const authError = authorize(req);
     if (authError) {
-      log(`[tv-mcp http] auth failed (${authError}): ${req.method} /mcp from ${req.socket.remoteAddress}`);
+      log(`[tv-mcp http] auth failed (${authError}): ${req.method} /mcp from ${clientLabel(req)}`);
       sendJson(res, 401, rpcError(-32001, 'Unauthorized'), { 'WWW-Authenticate': 'Bearer' });
       return;
     }
