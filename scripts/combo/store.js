@@ -44,19 +44,22 @@ export function mergeRead(store, read, { now, liveWindow, maxBars = MAX_BARS }) 
   const lo = read.bars[0].t;
   const hi = read.bars[read.bars.length - 1].t;
   const changed = (t, why) => skip(`history changed at bar ${t} (${why}): a roll, back-adjust or session switch; start a new --out folder`);
+  // A reloaded chart can drop or add a few quiet minutes and revise a few closes. Up to
+  // REVISED_SHARE of the stored bars in the read's span may differ in those ways; a back-adjust or
+  // a session switch changes far more. Missing bars stay in the store; new ones are inserted.
   const revised = new Set();
-  let overlap = 0;
+  const differ = [];
+  let inSpan = 0;
   for (let i = 0; i < store.bars.length; i++) {
     const s = store.bars[i];
     if (s.t < lo || s.t > hi) continue;
+    inSpan++;
     const r = inRead.get(s.t);
-    if (!r) return changed(s.t, 'the chart no longer has this bar');
-    overlap++;
-    if (r.c !== s.c) revised.add(s.t);
-  }
-  if (revised.size > REVISED_SHARE * overlap) {
-    const t = [...revised][0];
-    return changed(t, `close ${store.bars[stored.get(t)].c} now ${inRead.get(t).c}, ${revised.size} of ${overlap} bars differ`);
+    if (!r) differ.push([s.t, 'the chart no longer has this bar']);
+    else if (r.c !== s.c) {
+      revised.add(s.t);
+      differ.push([s.t, `close ${s.c} now ${r.c}`]);
+    }
   }
   let next = 0;
   for (const r of read.bars) {
@@ -64,7 +67,10 @@ export function mergeRead(store, read, { now, liveWindow, maxBars = MAX_BARS }) 
     while (next < store.bars.length && store.bars[next].t < r.t) next++;
     const before = store.bars[next - 1];
     const after = store.bars[next];
-    if (before && after && before.seg === after.seg) return changed(r.t, 'a new bar inside a stored stretch');
+    if (before && after && before.seg === after.seg) differ.push([r.t, 'a new bar inside a stored stretch']);
+  }
+  if (differ.length > REVISED_SHARE * inSpan) {
+    return changed(differ[0][0], `${differ[0][1]}; ${differ.length} of ${inSpan} bars differ`);
   }
   if (hi < store.bars[0].t) return skip('the read is older than the store and does not touch it');
 
