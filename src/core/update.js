@@ -24,6 +24,11 @@ export function isForkRemote(url) {
   return Boolean(m) && `${m[1]}/${m[2]}`.toLowerCase() === FORK_REPO.toLowerCase();
 }
 
+/** The remote URL with any user or token part replaced, safe to return to a client (TVMCP-R7). */
+export function redactRemote(url) {
+  return String(url || '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]*@/i, '$1***@');
+}
+
 function _resolve(deps) {
   return {
     execSync: deps?.execSync || _execSync,
@@ -64,9 +69,10 @@ export async function update({ _deps } = {}) {
     return { success: false, error: `No origin remote: ${err.message}. Add it with: git remote add origin ${FORK_URL}` };
   }
   if (!isForkRemote(origin)) {
+    const shown = redactRemote(origin);
     return {
-      success: false, origin,
-      error: `origin is ${origin}, not ${FORK_REPO}. Update skipped so this install does not switch to code without this fork's tools. Point it at the fork with: git remote set-url origin ${FORK_URL}`,
+      success: false, origin: shown,
+      error: `origin is ${shown}, not ${FORK_REPO}. Update skipped so this install does not switch to code without this fork's tools. Point it at the fork with: git remote set-url origin ${FORK_URL}`,
     };
   }
 

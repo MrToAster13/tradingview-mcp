@@ -7,6 +7,19 @@ register('status', {
   handler: () => core.healthCheck(),
 });
 
+/**
+ * Maps parsed `tv launch` flags to launch() options. The router parses with
+ * strict: false, so `--kill=false` arrives as the string "false". Only
+ * `--kill`, `--kill=true` or `--kill=1` turn killing on (TVMCP-R6).
+ */
+export function launchOptions(opts = {}) {
+  const kill = opts.kill === true || (typeof opts.kill === 'string' && /^(?:true|1)$/i.test(opts.kill.trim()));
+  return {
+    port: opts.port ? Number(opts.port) : undefined,
+    kill_existing: kill && !opts['no-kill'],
+  };
+}
+
 register('launch', {
   description: 'Launch TradingView with CDP enabled',
   options: {
@@ -14,10 +27,7 @@ register('launch', {
     kill: { type: 'boolean', description: 'Kill running TradingView instances first (off by default)' },
     'no-kill': { type: 'boolean', description: 'Do not kill running instances (the default; kept for old scripts)' },
   },
-  handler: (opts) => core.launch({
-    port: opts.port ? Number(opts.port) : undefined,
-    kill_existing: Boolean(opts.kill) && !opts['no-kill'],
-  }),
+  handler: (opts) => core.launch(launchOptions(opts)),
 });
 
 register('update', {

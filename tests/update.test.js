@@ -161,6 +161,16 @@ describe('update() — origin must be this fork (ELI-695)', () => {
     });
   }
 
+  it('does not echo credentials from a refused origin (TVMCP-R7)', async () => {
+    const { deps, state } = gitDeps({ originUrl: 'https://x-access-token:SECRET123@github.com/tradesdontlie/tradingview-mcp.git' });
+    const r = await update({ _deps: deps });
+    assert.equal(r.success, false);
+    assert.ok(!JSON.stringify(r).includes('SECRET123'), 'tv_update returned the token in origin');
+    assert.ok(!JSON.stringify(r).includes('x-access-token'), 'tv_update returned the user part of origin');
+    assert.match(r.origin, /github\.com\/tradesdontlie\/tradingview-mcp/);
+    assert.ok(!touchedRemote(state.cmds));
+  });
+
   it('the non-git hint clones the fork', async () => {
     const { deps } = gitDeps();
     deps.existsSync = () => false;
