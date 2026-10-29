@@ -135,6 +135,15 @@ describe('mergeRead round 2 regressions', () => {
     assert.deepEqual([bar.c, bar.v.k], [2.25, 5]);
   });
 
+  it('tolerates a few bars a reloaded chart no longer has, as after a TradingView restart', () => {
+    const bars = Array.from({ length: 40 }, (_, i) => b(100 * (i + 1), i + 1));
+    const first = mergeRead(null, read(bars), opts(100000)).store;
+    const reloaded = bars.filter((x) => x.t !== 1000 && x.t !== 1100).concat([b(4100, 41)]);
+    const r = mergeRead(first, read(reloaded), opts(100000));
+    assert.equal(r.skipped, undefined);
+    assert.deepEqual([r.store.bars.length, r.store.bars.some((x) => x.t === 1000)], [41, true]);
+  });
+
   it('keeps at most maxBars bars, dropping the oldest', () => {
     const r = mergeRead(null, read([b(100, 1), b(200, 2), b(300, 3), b(400, 4)]), { ...opts(500), maxBars: 3 });
     assert.deepEqual(r.store.bars.map((x) => x.t), [200, 300, 400]);
