@@ -63,82 +63,8 @@ export async function create({ condition, price, message }) {
   `);
 }
 
-export async function list() {
-  // Use pricealerts REST API — returns structured data with alert_id, symbol, price, conditions
-  const result = await evaluateAsync(`
-    fetch('https://pricealerts.tradingview.com/list_alerts', { credentials: 'include' })
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        if (data.s !== 'ok' || !Array.isArray(data.r)) return { alerts: [], error: data.errmsg || 'Unexpected response' };
-        return {
-          alerts: data.r.map(function(a) {
-            var sym = '';
-            try { sym = JSON.parse(a.symbol.replace(/^=/, '')).symbol || a.symbol; } catch(e) { sym = a.symbol; }
-            return {
-              alert_id: a.alert_id,
-              symbol: sym,
-              type: a.type,
-              message: a.message,
-              active: a.active,
-              condition: a.condition,
-              resolution: a.resolution,
-              created: a.create_time,
-              last_fired: a.last_fire_time,
-              expiration: a.expiration,
-            };
-          })
-        };
-      })
-      .catch(function(e) { return { alerts: [], error: e.message }; })
-  `);
-  return { success: true, alert_count: result?.alerts?.length || 0, source: 'internal_api', alerts: result?.alerts || [], error: result?.error };
-}
-
-export async function deleteAlerts({ delete_all, alert_ids, alert_id } = {}) {
-  // Resolve the set of alert ids to delete.
-  let ids = [];
-  if (Array.isArray(alert_ids)) ids = ids.concat(alert_ids);
-  if (alert_id != null) ids.push(alert_id);
-  if (delete_all) {
-    const listed = await list();
-    ids = (listed.alerts || []).map((a) => a.alert_id);
-  }
-  ids = ids.filter((x) => x != null);
-  if (!ids.length) {
-    return { success: false, source: 'internal_api', error: delete_all ? 'No alerts to delete.' : 'Provide delete_all: true or an alert_id to delete.' };
-  }
-
-  const result = await evaluate(`
-    (function() {
-      try {
-        var x = new XMLHttpRequest();
-        x.open('POST', 'https://pricealerts.tradingview.com/delete_alerts', false);
-        x.withCredentials = true;
-        x.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
-        x.send(JSON.stringify({ payload: { alert_ids: ${JSON.stringify(ids)} } }));
-        var data = {}; try { data = JSON.parse(x.responseText); } catch (e) {}
-        return { ok: data.s === 'ok', status: x.status, response: (x.responseText || '').slice(0, 200) };
-      } catch (e) { return { ok: false, error: e.message }; }
-    })()
-  `);
-  if (result && result.ok) {
-    return { success: true, source: 'internal_api', deleted_count: ids.length, alert_ids: ids };
-  }
-  return { success: false, source: 'internal_api', alert_ids: ids, error: (result && (result.error || result.response)) || 'delete failed' };
-}
-
-// Minutes ("15", "240"), or a count and unit ("1D", "1W", "30S"), or a bare unit ("D").
-const RESOLUTION_RE = /^(\d+[SDWM]?|[SDWM])$/;
-
-// Fields copied from the source alert unchanged: symbol, message and the
-// notification settings. Conditions and resolution are set separately.
-const COPIED_FIELDS = [
-  'symbol', 'message', 'name', 'web_hook', 'expiration', 'auto_deactivate',
-  'email', 'sms_over_email', 'mobile_push', 'popup', 'sound_file', 'sound_duration',
-  'presentation_data',
-];
-
-// The pricealerts calls copy() makes, run inside TradingView Desktop with its session.
+// The pricealerts calls this module makes, run inside TradingView Desktop with
+// its session. Tests pass a fake with the same methods.
 const pageApi = {
   async listAlerts() {
     const data = await evaluateAsync(`
@@ -162,7 +88,86 @@ const pageApi = {
       })()
     `);
   },
+  async deleteAlerts(ids) {
+    return evaluate(`
+      (function() {
+        try {
+          var x = new XMLHttpRequest();
+          x.open('POST', 'https://pricealerts.tradingview.com/delete_alerts', false);
+          x.withCredentials = true;
+          x.setRequestHeader('Content-Type', 'text/plain;charset=UTF-8');
+          x.send(JSON.stringify({ payload: { alert_ids: ${JSON.stringify(ids)} } }));
+          try { return JSON.parse(x.responseText); } catch (e) { return { s: 'error', errmsg: 'HTTP ' + x.status + ' ' + (x.responseText || '').slice(0, 200) }; }
+        } catch (e) { return { s: 'error', errmsg: e.message }; }
+      })()
+    `);
+  },
 };
+
+function unwrapSymbol(symbol) {
+  try { return JSON.parse(String(symbol).replace(/^=/, '')).symbol || symbol; } catch { return symbol; }
+}
+
+/**
+ * List the account's alerts. A failed request returns success: false with
+ * the error, so a logged-out session never reads as "no alerts".
+ */
+export async function list(api = pageApi) {
+  let raw;
+  try {
+    raw = await api.listAlerts();
+  } catch (err) {
+    return { success: false, source: 'internal_api', error: err.message };
+  }
+  const alerts = raw.map((a) => ({
+    alert_id: a.alert_id,
+    symbol: unwrapSymbol(a.symbol),
+    type: a.type,
+    message: a.message,
+    active: a.active,
+    condition: a.condition,
+    resolution: a.resolution,
+    created: a.create_time,
+    last_fired: a.last_fire_time,
+    expiration: a.expiration,
+  }));
+  return { success: true, alert_count: alerts.length, source: 'internal_api', alerts };
+}
+
+export async function deleteAlerts({ delete_all, alert_ids, alert_id } = {}, api = pageApi) {
+  // Resolve the set of alert ids to delete.
+  let ids = [];
+  if (Array.isArray(alert_ids)) ids = ids.concat(alert_ids);
+  if (alert_id != null) ids.push(alert_id);
+  if (delete_all) {
+    const listed = await list(api);
+    if (!listed.success) {
+      return { success: false, source: 'internal_api', error: `Could not list alerts, nothing deleted: ${listed.error}` };
+    }
+    ids = listed.alerts.map((a) => a.alert_id);
+  }
+  ids = ids.filter((x) => x != null);
+  if (!ids.length) {
+    return { success: false, source: 'internal_api', error: delete_all ? 'No alerts to delete.' : 'Provide delete_all: true or an alert_id to delete.' };
+  }
+
+  const data = await api.deleteAlerts(ids);
+  if (data && data.s === 'ok') {
+    return { success: true, source: 'internal_api', deleted_count: ids.length, alert_ids: ids };
+  }
+  return { success: false, source: 'internal_api', alert_ids: ids, error: (data && ((data.err && data.err.code) || data.errmsg)) || 'delete failed' };
+}
+
+// Minutes ("15", "240"), or a count and unit ("1D", "1W", "30S"), or a bare unit ("D").
+const RESOLUTION_RE = /^(\d+[SDWM]?|[SDWM])$/;
+
+// Fields copied from the source alert unchanged: symbol, message and the
+// notification settings. Conditions and resolution are set separately.
+const COPIED_FIELDS = [
+  'symbol', 'message', 'name', 'web_hook', 'expiration', 'auto_deactivate',
+  'email', 'sms_over_email', 'mobile_push', 'popup', 'sound_file', 'sound_duration',
+  'presentation_data',
+];
 
 /**
  * Copy an existing alert, including a study alert on a Pine indicator, to a
