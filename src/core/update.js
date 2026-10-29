@@ -1,8 +1,9 @@
 /**
  * Core self-update logic: fetch + fast-forward merge of origin/main, then
- * npm ci when the lockfile changed. Guarded for non-git installs, dirty
- * working trees, non-main branches, and diverged history. Never touches
- * anything on failure — every guard returns before the merge.
+ * npm ci when the lockfile changed. Guarded for non-git installs, an origin
+ * that is not this fork, dirty working trees, non-main branches, and
+ * diverged history. Never touches anything on failure: every guard returns
+ * before the merge.
  */
 import { execSync as _execSync } from 'child_process';
 import { existsSync as _existsSync } from 'fs';
@@ -11,6 +12,17 @@ import { fileURLToPath } from 'url';
 
 // src/core/update.js -> repo root, independent of process.cwd()
 const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+
+// tv_update pulls only from this fork. Upstream lacks the fork's tools, so
+// fast-forwarding from it would leave the docs describing missing tools.
+export const FORK_REPO = 'MrToAster13/tradingview-mcp';
+export const FORK_URL = `https://github.com/${FORK_REPO}.git`;
+
+/** True when a git remote URL (https, ssh or scp form) points at FORK_REPO on GitHub. */
+export function isForkRemote(url) {
+  const m = /^(?:https:\/\/github\.com\/|ssh:\/\/git@github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(String(url || '').trim());
+  return Boolean(m) && `${m[1]}/${m[2]}`.toLowerCase() === FORK_REPO.toLowerCase();
+}
 
 function _resolve(deps) {
   return {
@@ -28,7 +40,7 @@ export async function update({ _deps } = {}) {
   if (!existsSync(join(repoRoot, '.git'))) {
     return {
       success: false,
-      error: `Not a git checkout (${repoRoot}). tv_update needs a git clone — re-install with: git clone https://github.com/tradesdontlie/tradingview-mcp`,
+      error: `Not a git checkout (${repoRoot}). tv_update needs a git clone — re-install with: git clone ${FORK_URL}`,
     };
   }
 
@@ -42,6 +54,19 @@ export async function update({ _deps } = {}) {
     return {
       success: false, branch,
       error: `On branch "${branch}", not "main" — update skipped so your work isn't disturbed. Run: git checkout main, then retry.`,
+    };
+  }
+
+  let origin;
+  try {
+    origin = git('remote get-url origin');
+  } catch (err) {
+    return { success: false, error: `No origin remote: ${err.message}. Add it with: git remote add origin ${FORK_URL}` };
+  }
+  if (!isForkRemote(origin)) {
+    return {
+      success: false, origin,
+      error: `origin is ${origin}, not ${FORK_REPO}. Update skipped so this install does not switch to code without this fork's tools. Point it at the fork with: git remote set-url origin ${FORK_URL}`,
     };
   }
 
