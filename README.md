@@ -251,7 +251,7 @@ Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project
 | "Draw a level at 24500" | `draw_shape` (horizontal_line) |
 | "Take a screenshot" | `capture_screenshot` |
 
-## Tool Reference (78 MCP tools)
+## Tool Reference (86 MCP tools)
 
 ### Chart Reading
 
@@ -261,6 +261,9 @@ Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project
 | `data_get_study_values` | Read current RSI, MACD, BB, EMA values from all indicators | ~500B |
 | `quote_get` | Get latest price, OHLC, volume | ~200B |
 | `data_get_ohlcv` | Get price bars. **Use `summary: true`** for compact stats | 500B (summary) / 8KB (100 bars) |
+| `data_get_indicator` | Read one indicator's info and input values | ~500B |
+| `chart_get_visible_range` | Read the visible date range (unix timestamps) and bar range | ~200B |
+| `depth_get` | Read the order book / Depth of Market | varies |
 
 ### Custom Indicator Data (Pine Drawings)
 
@@ -275,6 +278,14 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 
 **Always use `study_filter`** to target a specific indicator: `study_filter: "Profiler"`.
 
+### Strategy Tester
+
+| Tool | What it does |
+|------|-------------|
+| `data_get_strategy_results` | Strategy performance metrics. Opens the panel and unhides a hidden strategy |
+| `data_get_trades` | Trade list from the Strategy Tester |
+| `data_get_equity` | Equity curve from the Strategy Tester |
+
 ### Chart Control
 
 | Tool | What it does |
@@ -287,6 +298,7 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 | `chart_set_visible_range` | Zoom to exact range (unix timestamps) |
 | `symbol_info` / `symbol_search` | Symbol metadata and search |
 | `indicator_set_inputs` / `indicator_toggle_visibility` | Change indicator settings, show/hide |
+| `indicator_search` / `indicator_add` | Search the Indicators dialog, including community scripts, and add a result by name |
 
 ### Multi-Pane Layouts
 
@@ -311,6 +323,7 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 |------|------|
 | `pine_set_source` | 1. Inject code into editor |
 | `pine_smart_compile` | 2. Compile with auto-detection + error check |
+| `pine_compile` | Compile or add the current script to the chart, without the auto-detection |
 | `pine_get_errors` | 3. Read compilation errors if any |
 | `pine_get_console` | 4. Read log.info() output |
 | `pine_save` | 5. Save to TradingView cloud |
@@ -337,14 +350,20 @@ Read `line.new()`, `label.new()`, `table.new()`, `box.new()` output from any vis
 |------|-------------|
 | `draw_shape` | Draw horizontal_line, trend_line, rectangle, text |
 | `draw_list` / `draw_remove_one` / `draw_clear` | Manage drawings |
+| `draw_get_properties` | Read one drawing's properties and points |
+| `draw_trades_from_csv` | Draw a long/short position for each filled entry in the newest paper-trading CSV export in ~/Downloads |
 | `alert_create` / `alert_list` / `alert_delete` | Manage price alerts |
 | `alert_copy` | Copy an alert, including an indicator alert, to a new timeframe |
 | `capture_screenshot` | Screenshot (regions: full, chart, strategy_tester) |
 | `batch_run` | Run action across multiple symbols/timeframes |
-| `watchlist_get` / `watchlist_add` | Read/modify watchlist |
-| `layout_list` / `layout_switch` | Manage saved layouts |
-| `ui_open_panel` / `ui_click` / `ui_evaluate` | UI automation |
-| `tv_launch` / `tv_health_check` / `tv_discover` | Connection management |
+| `watchlist_get` / `watchlist_add` / `watchlist_add_bulk` / `watchlist_remove` | Read the watchlist, add one or many symbols, remove symbols |
+| `layout_list` / `layout_switch` / `layout_new` | List, switch to or create saved layouts |
+| `ui_open_panel` / `ui_click` / `ui_hover` / `ui_scroll` / `ui_fullscreen` | UI automation |
+| `ui_find_element` | Find UI elements by text, aria-label or CSS selector |
+| `ui_type_text` / `ui_keyboard` / `ui_mouse_click` | Type text, press keys, click at x,y (stdio only) |
+| `ui_evaluate` | Run JavaScript in the TradingView page (stdio only) |
+| `tv_launch` / `tv_health_check` / `tv_discover` / `tv_ui_state` | Connection management and UI state |
+| `tv_update` | Fast-forward this install from the fork's main and run `npm ci` when the lockfile changed (stdio only) |
 
 ## Context Management
 
@@ -376,11 +395,15 @@ The key flag: `--remote-debugging-port=9222`
 ## Testing
 
 ```bash
-# Requires TradingView running with --remote-debugging-port=9222
+# Offline: every tests/*.test.js except e2e. TradingView can be closed.
 npm test
+
+# Live: needs TradingView running with --remote-debugging-port. Reads
+# TV_CDP_HOST / TV_CDP_PORT like the server does (default 127.0.0.1:9222).
+npm run test:e2e
 ```
 
-29 tests covering: Pine Script static analysis, server-side compilation, and CLI routing.
+`npm test` runs `scripts/run_offline_tests.js`, which finds test files by name, so a new file under `tests/` runs in CI with no edit to `package.json`. `tests/docs_tools.test.js` fails when this README's tool tables or tool counts drift from the registered tools.
 
 ## Architecture
 

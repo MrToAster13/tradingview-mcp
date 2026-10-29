@@ -85,6 +85,49 @@ Use `study_filter` parameter to target a specific indicator by name substring (e
 - `tv_launch` → auto-detect and launch TradingView with CDP on Mac/Win/Linux. Returns the running instance when CDP already answers, and kills nothing unless `kill_existing: true`
 - `tv_health_check` → verify connection is working
 
+### "Find or add an indicator, or look up a symbol"
+- `indicator_search` → search the Indicators dialog, including strategies and community scripts
+- `indicator_add` → add a search result to the chart by name
+- `indicator_set_inputs` → change an indicator's inputs; `indicator_toggle_visibility` → show or hide it
+- `symbol_search` → search symbols by keyword (calls TradingView's server from Node; see README)
+- `symbol_info` → metadata for the current symbol
+
+### "How did my strategy do?"
+- `data_get_strategy_results` → performance metrics; opens the Strategy Tester and unhides a hidden strategy
+- `data_get_trades` → trade list (20 per request)
+- `data_get_equity` → equity curve
+
+### "More chart data"
+- `chart_get_visible_range` → visible date range and bar range
+- `depth_get` → order book / Depth of Market
+
+### "Pine Script, more"
+- `pine_analyze` → offline static analysis, no chart needed
+- `pine_check` → server-side compile check with no chart open (uploads the source to TradingView as Guest)
+- `pine_compile` → compile or add the current script without `pine_smart_compile`'s auto-detection
+- `pine_list_scripts` → list saved scripts, then `pine_open` one
+
+### "Drawings, alerts and watchlists, more"
+- `draw_get_properties` → one drawing's properties and points
+- `draw_trades_from_csv` → draw a long/short position per filled entry in the newest paper-trading CSV export in ~/Downloads
+- `watchlist_get`, `watchlist_add`, `watchlist_add_bulk`, `watchlist_remove` → read and edit the active watchlist
+- `layout_list`, `layout_new` → list or create saved layouts
+
+### "Panes and tabs"
+- `pane_list`, `pane_set_layout`, `pane_focus`, `pane_set_symbol` → multi-chart grids
+- `tab_list`, `tab_new`, `tab_close`, `tab_switch` → chart tabs
+
+### "Drive the UI directly"
+- `tv_ui_state` → which panels are open and which buttons are enabled
+- `ui_find_element` → find elements by text, aria-label or CSS selector
+- `ui_hover`, `ui_scroll` → hover an element, scroll the chart or page
+- `ui_type_text`, `ui_keyboard`, `ui_mouse_click` → type, press keys, click at x,y (stdio only)
+- `ui_evaluate` → run JavaScript in the page; last resort (stdio only)
+
+### "Update this server"
+- `tv_discover` → which internal TradingView API paths exist
+- `tv_update` → fast-forward from the fork's main and `npm ci` when the lockfile changed; refuses unless `origin` is MrToAster13/tradingview-mcp. Restart the server afterwards (stdio only)
+
 ## Context Management Rules
 
 These tools can return large payloads. Follow these rules to avoid context bloat:
