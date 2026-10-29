@@ -91,4 +91,4 @@ node scripts/combo/run.js --config my-signals.json --out combo-data --every 15
 
 Leave the terminal open to keep it running. `--once` runs one cycle and exits.
 
-Point it at a chart on candles, bars, hollow candles, line or area. A Heikin Ashi chart is skipped every cycle: its opens and closes are averages, not prices a trade could fill at. If your trading layout is on Heikin Ashi, keep a second layout or tab on candles with the same studies for the tester. Indicators on that tab then compute on real prices, so their signals can differ from the ones you see on Heikin Ashi.
+Point it at a chart on candles, bars, hollow candles, line or area. A Heikin Ashi chart is skipped every cycle: its opens and closes are averages, not prices a trade could fill at. The tester reads the first chart tab that shows the config symbol and timeframe on one of those types, so if your trading tab is on Heikin Ashi, open a second tab on candles with the same studies and it will read that one. Indicators on that tab then compute on real prices, so their signals can differ from the ones you see on Heikin Ashi.
