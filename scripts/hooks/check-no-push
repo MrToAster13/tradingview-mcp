@@ -1,0 +1,17 @@
+#!/bin/sh
+# Fail when any commit in the given rev-list range says not to push it,
+# such as "do not push", "don't push" or "do-not-push" in its message.
+# Usage: scripts/hooks/check-no-push <rev-list args>, for example
+#   scripts/hooks/check-no-push origin/main..HEAD
+# Used by the pre-push hook and by CI on pull requests (ELI-694).
+[ "$#" -gt 0 ] || { echo "usage: $0 <rev-list args>" >&2; exit 2; }
+# Fail closed: a range git cannot resolve must not pass as "nothing to check".
+shas=$(git rev-list "$@") || { echo "check-no-push: cannot resolve range: $*" >&2; exit 2; }
+found=0
+for sha in $shas; do
+  if git log -1 --format=%B "$sha" | grep -qiE "do[ -]?not[ -]push|don'?t push"; then
+    echo "Refusing: commit $(git log -1 --format='%h %s' "$sha") says do not push." >&2
+    found=1
+  fi
+done
+exit "$found"

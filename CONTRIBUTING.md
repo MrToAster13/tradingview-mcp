@@ -19,7 +19,7 @@ This tool is a **local bridge** between Claude Code and the TradingView Desktop 
 
 Contributions **must not** add features that:
 
-- **Connect directly to TradingView's servers** — all data access must go through the locally running Desktop app via CDP
+- **Add new direct calls to TradingView's servers from the Node process.** New data access goes through the locally running Desktop app via CDP. The existing calls are listed in the README under "Network calls to TradingView servers": `pine_check` and `symbol_search` call from Node, and the alert, saved-script and watchlist tools call from the app session. A change that adds a TradingView host must add it to that table, or `tests/network_hosts.test.js` fails.
 - **Bypass authentication or subscription restrictions** — this tool requires a valid TradingView account and subscription
 - **Scrape, cache, or redistribute market data** — no data storage, no databases, no export-to-CSV of price data
 - **Enable automated trading or order execution** — this is a chart reading/development tool, not a trading bot framework
@@ -38,11 +38,14 @@ If you're unsure whether a feature fits, open an issue to discuss before submitt
 
 ```bash
 npm install
+git config core.hooksPath scripts/hooks  # once per clone: refuse pushes of commits marked "do not push"
 npm run lint      # eslint — the no-undef guard catches unfinished refactors
-npm run test:unit # offline unit tests (no TradingView needed)
+npm test          # every offline test file (no TradingView needed)
 npm run test:e2e  # requires TradingView running with CDP on port 9222
 tv status         # verify CDP connection (TradingView must be running)
 ```
+
+A commit message that says "do not push" (or "don't push", "do-not-push") keeps that commit local. The pre-push hook in `scripts/hooks` refuses the push, and CI fails a pull request that carries one. Put private paths and ids in an untracked file instead of relying on the message.
 
 Core functions take an optional `_deps` parameter resolved via `_resolve(_deps)` so they're unit-testable — see `src/core/replay.js` or `src/core/health.js` for the pattern.
 

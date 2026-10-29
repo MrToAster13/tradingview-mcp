@@ -100,7 +100,7 @@ describe('launch() — MSIX WindowsApps handling', { skip: !onWindows }, () => {
 
   it('EACCES on direct spawn falls back to local copy', async () => {
     const { deps, state } = msixDeps({ spawnFailures: ['WindowsApps'], cdpBindsFor: ['tradingview-mcp'] });
-    const result = await launch({ _deps: deps });
+    const result = await launch({ kill_existing: true, _deps: deps });
     assert.equal(result.success, true);
     assert.equal(result.msix_local_copy, true);
     assert.equal(result.binary, LOCAL_COPY_EXE);
@@ -184,16 +184,13 @@ describe('launch() — MSIX fallback honours kill_existing: false', { skip: !onW
     assert.equal(state.killed, 0);
   });
 
-  it('default kill_existing: fallback still kills, and no running check is made', async () => {
+  it('default kill_existing is false (ELI-696): a running TradingView is not killed', async () => {
     const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tvRunning: true });
-    const result = await launch({ _deps: deps });
-    assert.equal(result.success, true);
-    assert.equal(result.msix_local_copy, true);
-    assert.equal(state.runningChecks, 0);
-    assert.equal(state.killed, 2, 'up-front kill plus the fallback kill');
+    await assert.rejects(() => launch({ _deps: deps }), /not killed because kill_existing is false/);
+    assert.equal(state.killed, 0);
   });
 
-  it('kill_existing: true behaves like the default', async () => {
+  it('kill_existing: true kills up front and in the fallback, with no running check', async () => {
     const { deps, state } = msixDeps({ cdpBindsFor: ['tradingview-mcp'], tvRunning: true });
     const result = await launch({ kill_existing: true, _deps: deps });
     assert.equal(result.msix_local_copy, true);
@@ -309,12 +306,37 @@ describe('launch() — classic install path', { skip: !onWindows }, () => {
       readdirSync: () => [],
       delay: async () => {},
       probeCdp: async () => (state.cdpUp ? CDP_VERSION : null),
+      // Nothing is running. Without this, the default check runs tasklist
+      // through the execSync mock above, which throws, and a thrown check
+      // counts as running (ELI-696).
+      isTvRunning: async () => false,
     };
     const result = await launch({ _deps: deps });
     assert.equal(result.success, true);
     assert.equal(result.binary, classicExe);
     assert.equal(result.msix_local_copy, undefined);
     assert.deepEqual(state.spawned, [classicExe]);
+  });
+
+  it('classic install: a process check that throws counts as running, so it refuses', async () => {
+    const classicExe = `${process.env.LOCALAPPDATA}\\TradingView\\TradingView.exe`;
+    const state = { spawned: [], killCmds: [] };
+    const deps = {
+      existsSync: (p) => p === classicExe,
+      execSync: (cmd) => {
+        if (cmd.includes('taskkill')) { state.killCmds.push(cmd); return ''; }
+        throw new Error(`unexpected: ${cmd}`);
+      },
+      spawn: (exe) => { state.spawned.push(exe); return mockChild(); },
+      cpSync: () => { throw new Error('should not copy'); },
+      rmSync: () => {},
+      readdirSync: () => [],
+      delay: async () => {},
+      probeCdp: async () => null,
+    };
+    await assert.rejects(() => launch({ _deps: deps }), /running without CDP on port 9222/);
+    assert.deepEqual(state.spawned, []);
+    assert.deepEqual(state.killCmds, []);
   });
 
   it('throws a helpful error when TradingView is not found', async () => {
@@ -444,5 +466,82 @@ describe('launch() — MSIX local copy uses the packaged profile', { skip: !onWi
     const result = await launch({ _deps: deps });
     assert.equal(result.cdp_ready, false);
     assert.equal(result.user_data_dir, MSIX_PROFILE_DIR);
+  });
+});
+
+// ── ELI-696: no kill by default, check CDP first, kill by exact name ─────
+
+const HOST_TV_PATH = {
+  linux: '/opt/TradingView/tradingview',
+  darwin: '/Applications/TradingView.app/Contents/MacOS/TradingView',
+  win32: `${process.env.LOCALAPPDATA}\\TradingView\\TradingView.exe`,
+}[process.platform] || '/opt/TradingView/tradingview';
+
+function hostDeps({ cdpUpAtStart = false, tvRunning = false } = {}) {
+  const state = { spawned: [], killCmds: [], processKills: [], cdpUp: cdpUpAtStart };
+  const deps = {
+    existsSync: (p) => p === HOST_TV_PATH,
+    execSync: (cmd) => {
+      if (/taskkill|pkill|^kill\b/.test(cmd)) { state.killCmds.push(cmd); return ''; }
+      return '';
+    },
+    spawn: (exe) => { state.spawned.push(exe); state.cdpUp = true; return mockChild(); },
+    cpSync: () => {}, rmSync: () => {}, readdirSync: () => [],
+    delay: async () => {},
+    probeCdp: async () => (state.cdpUp ? CDP_VERSION : null),
+    processKill: (pid, sig) => { state.processKills.push({ pid, sig }); },
+    isTvRunning: async () => tvRunning,
+  };
+  return { deps, state };
+}
+
+describe('launch() — default never kills TradingView (ELI-696)', () => {
+  it('kill_existing defaults to false: no kill command runs', async () => {
+    const { deps, state } = hostDeps();
+    const result = await launch({ _deps: deps });
+    assert.equal(result.success, true);
+    assert.deepEqual(state.killCmds, []);
+    assert.deepEqual(state.processKills, []);
+    assert.deepEqual(state.spawned, [HOST_TV_PATH]);
+  });
+
+  it('returns the running TradingView when CDP already answers, and spawns nothing', async () => {
+    const { deps, state } = hostDeps({ cdpUpAtStart: true });
+    const result = await launch({ _deps: deps });
+    assert.equal(result.success, true);
+    assert.equal(result.already_running, true);
+    assert.deepEqual(state.spawned, []);
+    assert.deepEqual(state.killCmds, []);
+  });
+
+  it('TradingView running without CDP: refuses, spawns and kills nothing', async () => {
+    const { deps, state } = hostDeps({ tvRunning: true });
+    await assert.rejects(
+      () => launch({ _deps: deps }),
+      (err) => {
+        assert.match(err.message, /running without CDP on port 9222/);
+        assert.match(err.message, /kill_existing: true/);
+        return true;
+      },
+    );
+    assert.deepEqual(state.spawned, []);
+    assert.deepEqual(state.killCmds, []);
+    assert.deepEqual(state.processKills, []);
+  });
+
+  it('TradingView running without CDP, kill_existing: true: kills and relaunches', async () => {
+    const { deps, state } = hostDeps({ tvRunning: true });
+    const result = await launch({ kill_existing: true, _deps: deps });
+    assert.equal(result.success, true);
+    assert.equal(state.killCmds.length, 1);
+    assert.deepEqual(state.spawned, [HOST_TV_PATH]);
+  });
+
+  it('kill_existing: true on Linux and Mac kills by exact process name, never pkill -f', { skip: onWindows }, async () => {
+    const { deps, state } = hostDeps();
+    await launch({ kill_existing: true, _deps: deps });
+    assert.equal(state.killCmds.length, 1);
+    assert.match(state.killCmds[0], /^pkill .*-x /);
+    assert.ok(!/-f\b/.test(state.killCmds[0]), `kill command matches full command lines: ${state.killCmds[0]}`);
   });
 });
