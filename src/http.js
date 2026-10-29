@@ -12,11 +12,22 @@
  * Env: TV_MCP_API_KEY (required, >= 32 chars), TV_MCP_HTTP_PORT (default 8765),
  * TV_MCP_IDLE_MINUTES (default 15; the process exits after this long with no
  * authenticated /mcp requests).
+ *
+ * Because the port can be public, HTTP mode does not register the tools in
+ * HTTP_BLOCKED_TOOLS (src/create_server.js). When main() stops, on idle
+ * shutdown or SIGINT/SIGTERM/SIGHUP/SIGBREAK, it turns off the :8443 Funnel
+ * if that Funnel points at this server's port. A hard kill (taskkill /F,
+ * SIGKILL) skips that; run `tailscale funnel --https=8443 off` by hand then.
  */
 import http from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { createServer as defaultCreateServer } from './create_server.js';
+import { createServer as buildServer } from './create_server.js';
+import { closeOwnFunnel, tailscaleSync as defaultTailscaleSync } from './funnel.js';
+
+// HTTP mode leaves out the stdio-only tools (see HTTP_BLOCKED_TOOLS).
+const defaultCreateServer = () => buildServer({ http: true });
+const SHUTDOWN_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'];
 
 export const HOST = '127.0.0.1';
 export const DEFAULT_HTTP_PORT = 8765;
@@ -89,6 +100,7 @@ export async function startHttpServer({
   const clearTimer = _deps.clearTimeout || clearTimeout;
   const exit = _deps.exit || ((code) => process.exit(code));
   const log = _deps.log || ((line) => process.stderr.write(`${line}\n`));
+  const onShutdown = _deps.onShutdown || (() => {});
 
   const expectedDigest = sha256(apiKey);
   const authorize = (req) => {
@@ -170,6 +182,7 @@ export async function startHttpServer({
     log(`[tv-mcp http] idle for ${Math.round(idleMs / 60_000 * 10) / 10} min, shutting down`);
     server.close();
     server.closeAllConnections();
+    onShutdown();
     exit(0);
   }
 
@@ -210,9 +223,39 @@ export async function main({ env = process.env, _deps = {} } = {}) {
     exit(1);
     return null;
   }
+  const runTailscale = _deps.tailscaleSync || defaultTailscaleSync;
+  const onSignal = _deps.onSignal || ((sig, fn) => process.on(sig, fn));
+
+  // Turn off the Funnel tv_up.js opened to this port. Runs once, synchronously,
+  // so it finishes before exit() even when exit is process.exit.
+  let handle = null;
+  let funnelDone = false;
+  const closeFunnel = () => {
+    if (funnelDone || !handle) return;
+    funnelDone = true;
+    try {
+      const r = closeOwnFunnel({ port: handle.port, run: runTailscale });
+      log(`[tv-mcp http] funnel: ${r.reason}`);
+    } catch (err) {
+      log(`[tv-mcp http] funnel: cleanup failed: ${err?.message || err}`);
+    }
+  };
+
   try {
-    const handle = await startHttpServer({ ...cfg, _deps: { ...(_deps || {}), exit, log } });
+    handle = await startHttpServer({ ...cfg, _deps: { ...(_deps || {}), exit, log, onShutdown: closeFunnel } });
     log(`[tv-mcp http] listening on http://${HOST}:${handle.port}/mcp (idle shutdown after ${Math.round(cfg.idleMs / 60_000 * 10) / 10} min)`);
+    let stopping = false;
+    for (const sig of SHUTDOWN_SIGNALS) {
+      onSignal(sig, () => {
+        if (stopping) return;
+        stopping = true;
+        log(`[tv-mcp http] ${sig}, shutting down`);
+        handle.server.close();
+        handle.server.closeAllConnections();
+        closeFunnel();
+        exit(0);
+      });
+    }
     return handle;
   } catch (err) {
     log(`[tv-mcp http] failed to start on ${HOST}:${cfg.port}: ${err.message}`);

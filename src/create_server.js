@@ -19,7 +19,18 @@ import { registerUiTools } from './tools/ui.js';
 import { registerPaneTools } from './tools/pane.js';
 import { registerTabTools } from './tools/tab.js';
 
-export function createServer() {
+/**
+ * Tools that run arbitrary code, change the install, or drive the desktop.
+ * HTTP mode can be public through Tailscale Funnel, so these are stdio-only.
+ */
+export const HTTP_BLOCKED_TOOLS = Object.freeze([
+  'ui_evaluate', 'tv_update', 'tv_launch', 'ui_type_text', 'ui_mouse_click', 'ui_keyboard',
+]);
+
+/**
+ * @param {{ http?: boolean }} [opts] http: true leaves out HTTP_BLOCKED_TOOLS.
+ */
+export function createServer({ http = false } = {}) {
   const server = new McpServer(
     {
       name: 'tradingview',
@@ -74,6 +85,18 @@ CONTEXT MANAGEMENT:
     }
   );
 
+  // In HTTP mode, drop the blocked tools at registration so they are neither
+  // listed nor callable. Each name must be seen once, or registration changed
+  // and the block list no longer matches; fail loudly rather than expose it.
+  const skipped = new Set();
+  if (http) {
+    const register = server.tool.bind(server);
+    server.tool = (name, ...rest) => {
+      if (HTTP_BLOCKED_TOOLS.includes(name)) { skipped.add(name); return undefined; }
+      return register(name, ...rest);
+    };
+  }
+
   // Register all tool groups
   registerHealthTools(server);
   registerChartTools(server);
@@ -89,6 +112,12 @@ CONTEXT MANAGEMENT:
   registerUiTools(server);
   registerPaneTools(server);
   registerTabTools(server);
+
+  if (http) {
+    delete server.tool; // back to McpServer.prototype.tool
+    const missing = HTTP_BLOCKED_TOOLS.filter((n) => !skipped.has(n));
+    if (missing.length) throw new Error(`HTTP tool block list names tools that were never registered: ${missing.join(', ')}`);
+  }
 
   return server;
 }
