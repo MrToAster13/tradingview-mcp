@@ -95,3 +95,31 @@ describe('CI guard', () => {
     assert.match(ci, /scripts\/hooks\/check-no-push/);
   });
 });
+
+// Review finding TVMCP-R1: the check refused the commit that added it,
+// because that commit's message quoted the marker spellings.
+describe('check-no-push on messages that only describe the hook', { skip: !hasGit || onWindows }, () => {
+  const CHECK = join(HOOKS_DIR, 'check-no-push');
+
+  it('passes a commit whose message describes the hook without the marker', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tvmcp-check-'));
+    try {
+      git(dir, 'init', '-q', '-b', 'main');
+      commit(dir, 'Base');
+      commit(dir, 'ELI-694: Refuse pushes of commits that carry the no-push marker');
+      const r = spawnSync(CHECK, ['HEAD~1..HEAD'], { cwd: dir, encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // This branch's own commits must pass the check that CI runs on its pull
+  // request. Skips when origin/main is not fetched (shallow CI checkout).
+  const hasOriginMain = hasGit &&
+    spawnSync('git', ['rev-parse', '--verify', '-q', 'origin/main'], { cwd: ROOT }).status === 0;
+  it('passes every commit on this branch since origin/main', { skip: !hasOriginMain && 'origin/main not available' }, () => {
+    const r = spawnSync(CHECK, ['origin/main..HEAD'], { cwd: ROOT, encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+  });
+});
