@@ -7,7 +7,7 @@ import { update } from '../core/update.js';
 export function registerHealthTools(server) {
   server.tool('tv_health_check', 'Check CDP connection to TradingView and return current chart state', {}, async () => {
     try { return jsonResult(await core.healthCheck()); }
-    catch (err) { return jsonResult({ success: false, error: err.message, hint: 'TradingView is not running with CDP enabled. Use the tv_launch tool to start it automatically.' }, true); }
+    catch (err) { return jsonResult({ success: false, error: err.message, hint: 'TradingView is not running with CDP enabled. Use the tv_launch tool to start it; it does not kill a running TradingView unless kill_existing is true.' }, true); }
   });
 
   server.tool('tv_discover', 'Report which known TradingView API paths are available and their methods', {}, async () => {
@@ -22,7 +22,7 @@ export function registerHealthTools(server) {
 
   server.tool('tv_launch', 'Launch TradingView Desktop with Chrome DevTools Protocol (remote debugging) enabled. Auto-detects install location on Mac, Windows, and Linux, including Windows MSIX/Store installs. If a Store install blocks the debug port, automatically relaunches from a local package copy (result then includes msix_local_copy: true; the first fallback launch copies ~330MB one time, so it can take a minute).', {
     port: z.coerce.number().optional().describe('CDP port (default 9222)'),
-    kill_existing: bool.optional().describe('Kill existing TradingView instances first (default true)'),
+    kill_existing: bool.optional().describe('Kill running TradingView instances first (default false). When false and TradingView already answers CDP, nothing is started or killed'),
   }, async ({ port, kill_existing }) => {
     try { return jsonResult(await core.launch({ port, kill_existing })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }

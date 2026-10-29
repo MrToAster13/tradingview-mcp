@@ -5,10 +5,25 @@ REM Usage: scripts\launch_tv_debug.bat [port]
 set PORT=%1
 if "%PORT%"=="" set PORT=9222
 
-REM Kill existing TradingView instances
+REM If TradingView already answers CDP, there is nothing to do. If it runs
+REM without CDP, stop and kill nothing unless KILL_EXISTING=1 is set.
 REM (ping -n is used for waits throughout: timeout /t aborts when stdin is redirected)
-taskkill /F /IM TradingView.exe >nul 2>&1
-ping -n 3 127.0.0.1 >nul
+curl -s http://127.0.0.1:%PORT%/json/version >nul 2>&1
+if %errorlevel% equ 0 (
+    echo TradingView already answers CDP at http://127.0.0.1:%PORT%. Nothing to do.
+    exit /b 0
+)
+tasklist /FI "IMAGENAME eq TradingView.exe" /NH 2>nul | find /I "TradingView.exe" >nul
+if %errorlevel% equ 0 (
+    if not "%KILL_EXISTING%"=="1" (
+        echo Error: TradingView is running without CDP on port %PORT%. Not killing it.
+        echo Close TradingView yourself and re-run, or set KILL_EXISTING=1 to kill it.
+        exit /b 1
+    )
+    echo KILL_EXISTING=1: killing the running TradingView.
+    taskkill /F /IM TradingView.exe >nul 2>&1
+    ping -n 3 127.0.0.1 >nul
+)
 
 REM Auto-detect TradingView install location
 set "TV_EXE="

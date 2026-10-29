@@ -348,8 +348,23 @@ function _copyMsixPackageLocal(tvPath, { cpSync, rmSync, readdirSync, existsSync
 export async function launch({ port, kill_existing, _deps } = {}) {
   const deps = _resolveLaunchDeps(_deps);
   const cdpPort = port || CDP_PORT;
-  const killFirst = kill_existing !== false;
+  // Killing a user's TradingView is opt-in (ELI-696).
+  const killFirst = kill_existing === true;
   const platform = process.platform;
+
+  // A TradingView already answering CDP is what this call would produce, so
+  // reuse it instead of starting or killing anything.
+  if (!killFirst) {
+    let running = null;
+    try { running = JSON.parse((await deps.probeCdp(cdpPort)) || 'null'); } catch { running = null; }
+    if (running && typeof running === 'object') {
+      return {
+        success: true, already_running: true, platform, cdp_port: cdpPort,
+        cdp_url: `http://${CDP_HOST}:${cdpPort}`,
+        browser: running.Browser, user_agent: running['User-Agent'],
+      };
+    }
+  }
   // With kill_existing: false, the MSIX fallback below may only kill the copy
   // this call spawned, so note whether one was already running.
   const tvRunningAtStart = killFirst ? null : await deps.isTvRunning();
@@ -417,7 +432,10 @@ export async function launch({ port, kill_existing, _deps } = {}) {
   const killExisting = async () => {
     try {
       if (platform === 'win32') deps.execSync('taskkill /F /IM TradingView.exe', { timeout: 5000 });
-      else deps.execSync('pkill -f TradingView', { timeout: 5000 });
+      // Exact process name. pkill -f would also match this server, whose
+      // command line holds "tradingview-mcp".
+      else if (platform === 'darwin') deps.execSync('pkill -x TradingView', { timeout: 5000 });
+      else deps.execSync('pkill -i -x tradingview', { timeout: 5000 });
       await deps.delay(1500);
     } catch { /* may not be running */ }
   };

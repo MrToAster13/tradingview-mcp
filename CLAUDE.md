@@ -82,7 +82,7 @@ Use `study_filter` parameter to target a specific indicator by name substring (e
 - `capture_screenshot` → take a screenshot (regions: "full", "chart", "strategy_tester")
 
 ### "TradingView isn't running"
-- `tv_launch` → auto-detect and launch TradingView with CDP on Mac/Win/Linux
+- `tv_launch` → auto-detect and launch TradingView with CDP on Mac/Win/Linux. Returns the running instance when CDP already answers, and kills nothing unless `kill_existing: true`
 - `tv_health_check` → verify connection is working
 
 ## Context Management Rules

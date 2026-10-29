@@ -11,11 +11,12 @@ register('launch', {
   description: 'Launch TradingView with CDP enabled',
   options: {
     port: { type: 'string', short: 'p', description: 'CDP port (default 9222)' },
-    'no-kill': { type: 'boolean', description: 'Do not kill existing instances' },
+    kill: { type: 'boolean', description: 'Kill running TradingView instances first (off by default)' },
+    'no-kill': { type: 'boolean', description: 'Do not kill running instances (the default; kept for old scripts)' },
   },
   handler: (opts) => core.launch({
     port: opts.port ? Number(opts.port) : undefined,
-    kill_existing: !opts['no-kill'],
+    kill_existing: Boolean(opts.kill) && !opts['no-kill'],
   }),
 });
 
