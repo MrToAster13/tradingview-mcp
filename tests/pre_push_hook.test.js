@@ -6,7 +6,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, cpSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -114,14 +114,9 @@ describe('check-no-push on messages that only describe the hook', { skip: !hasGi
     }
   });
 
-  // This branch's own commits must pass the check that CI runs on its pull
-  // request. Skips when origin/main is not fetched (shallow CI checkout).
-  const hasOriginMain = hasGit &&
-    spawnSync('git', ['rev-parse', '--verify', '-q', 'origin/main'], { cwd: ROOT }).status === 0;
-  it('passes every commit on this branch since origin/main', { skip: !hasOriginMain && 'origin/main not available' }, () => {
-    const r = spawnSync(CHECK, ['origin/main..HEAD'], { cwd: ROOT, encoding: 'utf8' });
-    assert.equal(r.status, 0, r.stderr);
-  });
+  // The no-push-marker CI job checks pull request commits. The suite does not
+  // check this clone's own branch, because a local branch may carry a marked
+  // commit (TVMCP-R4).
 });
 
 // Review finding TVMCP-R3: the check failed open. A range git could not
@@ -154,5 +149,38 @@ describe('check-no-push on a range git cannot resolve', { skip: !hasGit || onWin
     assert.notEqual(r.status, 0, 'pre-push passed a marked commit');
     assert.match(r.stderr, /do not push/i);
     git(dir, 'checkout', '-q', 'main');
+  });
+});
+
+// Review finding TVMCP-R4: a test ran check-no-push on this clone's own
+// origin/main..HEAD, so the suite failed on any local branch carrying a
+// marked commit, which is the workflow the hook allows. This copies the test
+// file and hooks into a scratch repo with such a commit and runs the file.
+// The inner run sets TVMCP_HOOK_INNER so it does not recurse.
+describe('suite on a local branch carrying a marked commit', { skip: !hasGit || onWindows || !!process.env.TVMCP_HOOK_INNER }, () => {
+  it('pre_push_hook.test.js passes when the developer branch holds a marked commit', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tvmcp-self-'));
+    try {
+      mkdirSync(join(dir, 'tests'));
+      mkdirSync(join(dir, 'scripts'));
+      mkdirSync(join(dir, '.github', 'workflows'), { recursive: true });
+      cpSync(join(ROOT, 'tests', 'pre_push_hook.test.js'), join(dir, 'tests', 'pre_push_hook.test.js'));
+      cpSync(HOOKS_DIR, join(dir, 'scripts', 'hooks'), { recursive: true });
+      cpSync(join(ROOT, '.github', 'workflows', 'ci.yml'), join(dir, '.github', 'workflows', 'ci.yml'));
+      git(dir, 'init', '-q', '-b', 'main');
+      git(dir, 'add', '-A');
+      assert.equal(git(dir, 'commit', '-q', '-m', 'Base').status, 0);
+      git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+      commit(dir, 'WIP local paths, do not push');
+      // node:test skips a nested --test run while NODE_TEST_CONTEXT is set.
+      const env = { ...process.env, TVMCP_HOOK_INNER: '1' };
+      delete env.NODE_TEST_CONTEXT;
+      const r = spawnSync(process.execPath, ['--test', join('tests', 'pre_push_hook.test.js')], {
+        cwd: dir, encoding: 'utf8', env,
+      });
+      assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
