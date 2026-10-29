@@ -6,7 +6,9 @@
  *   2/5 cdp      TradingView answering on 127.0.0.1:<TV_CDP_PORT|9222>; if it runs without
  *                CDP, retry ~10s then refuse (never kill it); launch() only when none runs
  *   3/5 http     `node src/server.js --http` answering /health, else spawn it detached
- *   4/5 funnel   tailscale funnel :8443 -> http://127.0.0.1:<port>, else add it
+ *   4/5 funnel   tailscale funnel :8443 -> http://127.0.0.1:<port>, else add it.
+ *                The HTTP server turns this Funnel off when it stops (idle
+ *                shutdown or a signal); see src/http.js.
  *   5/5 url      print https://<MagicDNS name>:8443/mcp
  *
  * Every step probes first and only acts when the probe fails, so re-running
@@ -25,8 +27,8 @@ import { promisify } from 'node:util';
 import { validateApiKey, DEFAULT_HTTP_PORT } from '../src/http.js';
 import { launch, envWithoutElectronRunAsNode } from '../src/core/health.js';
 import { ensureTradingView, isTvRunning, probeCdp } from '../src/core/tv_process.js';
+import { FUNNEL_PORT, parseFunnel8443 } from '../src/funnel.js';
 
-const FUNNEL_PORT = 8443;
 const LOCAL = '127.0.0.1';
 const HEALTH_WAIT_TRIES = 30;
 const HEALTH_WAIT_MS = 500;
@@ -39,33 +41,9 @@ const KEY_HELP = [
   'Set it (bash/zsh):                  export TV_MCP_API_KEY=<key>',
 ];
 
-// ── Funnel status parsing ──────────────────────────────────────────────────
-
-const LOOPBACK_PROXY_RE = /^(?:http:\/\/)?(?:127\.0\.0\.1|localhost):(\d+)\/?$/i;
-
-/**
- * Classify the :8443 entry of `tailscale funnel status --json`.
- *   absent    nothing on 8443
- *   ours      8443 "/" proxies to loopback:<port> and funnel is on
- *   served    8443 "/" proxies to loopback:<port> but funnel is off (tailnet only)
- *   conflict  8443 is used for something else; leave it alone
- */
-export function parseFunnel8443(status, port) {
-  if (!status || typeof status !== 'object') return { state: 'absent' };
-  const tcp = status.TCP?.[FUNNEL_PORT] ?? status.TCP?.[String(FUNNEL_PORT)];
-  if (tcp && (tcp.TCPForward || tcp.TerminateTLS)) {
-    return { state: 'conflict', detail: `TCP forward to ${tcp.TCPForward || '?'}` };
-  }
-  const webKey = Object.keys(status.Web || {}).find((k) => k.endsWith(`:${FUNNEL_PORT}`));
-  if (!webKey) return { state: 'absent' };
-
-  const proxy = status.Web[webKey]?.Handlers?.['/']?.Proxy;
-  const m = typeof proxy === 'string' ? proxy.match(LOOPBACK_PROXY_RE) : null;
-  if (!m || Number(m[1]) !== port) {
-    return { state: 'conflict', detail: proxy ? `proxies to ${proxy}` : 'serves something other than a "/" proxy' };
-  }
-  return { state: status.AllowFunnel?.[webKey] === true ? 'ours' : 'served' };
-}
+// Funnel status parsing lives in src/funnel.js, which src/http.js also uses
+// to turn this Funnel off when the server stops.
+export { parseFunnel8443 };
 
 // ── Real side effects (replaced by _deps in tests) ─────────────────────────
 
