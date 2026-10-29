@@ -5,3 +5,6 @@ temp_*
 *.log
 discovery-log.json
 rules.json
+
+# Combo tester output
+combo-data/

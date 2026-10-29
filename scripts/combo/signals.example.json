@@ -1,0 +1,16 @@
+{
+  "symbol": "CME_MINI:MES1!",
+  "resolution": "1",
+  "horizon": 12,
+  "costPoints": 0.5,
+  "maxSize": 2,
+  "signals": [
+    { "name": "B buy dot", "side": "bull", "study": "MarketCipher_B", "plot": "Buy", "op": "fires" },
+    { "name": "Money flow above 0", "side": "bull", "study": "MarketCipher_B", "plot": "Mny Flow", "op": ">", "value": 0 },
+    { "name": "Blue wave crosses up", "side": "bull", "study": "MarketCipher_B", "plot": "Blue Wave", "op": "crosses_above", "value": 0 },
+    { "name": "Close above VWAP", "side": "bull", "study": "MarketCipher_SR", "plot": "VWAP", "op": "<", "ref": "close" },
+    { "name": "Money flow below 0", "side": "bear", "study": "MarketCipher_B", "plot": "Mny Flow", "op": "<", "value": 0 },
+    { "name": "Blue wave crosses down", "side": "bear", "study": "MarketCipher_B", "plot": "Blue Wave", "op": "crosses_below", "value": 0 },
+    { "name": "Close below VWAP", "side": "bear", "study": "MarketCipher_SR", "plot": "VWAP", "op": ">", "ref": "close" }
+  ]
+}
