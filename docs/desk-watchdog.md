@@ -23,4 +23,6 @@ Environment variables, all optional: `DESK_WATCH_TESTER_REPO` (where `scripts/co
 - It cannot help while the PC is asleep, off or signed out. The Mac heartbeat check reports that.
 - Alerts depend on the Mac mini and SSH. When they fail, the message stays in the Hermes cron log and is sent again on the next run.
 - It does not check Tailscale or the Funnel unless the TradingView check fails.
+- Don't run the tester from an elevated (admin) terminal. The watchdog can't see an elevated process and would start a second tester.
+- To stop the tester by hand, pause the watchdog first with `hermes cron pause desk-watch`, or the next run starts the tester again. Resume it with `hermes cron resume desk-watch`.
 - The restart uses the configured tester config. Change `DESK_WATCH_TESTER_CONFIG` in the wrapper when you switch signal lists.

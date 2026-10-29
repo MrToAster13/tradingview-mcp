@@ -14,9 +14,10 @@ const REVISED_SHARE = 0.1;
 // Live bars keep their stored values. Bars loaded from history take a new read's values only
 // when that read starts at or before the read that wrote them (from), so warm-up at the old edge
 // of an earlier read is replaced once more history loads, and a shorter read never damages it.
-// A few revised closes (up to REVISED_SHARE of the overlap) are taken, and those bars stop being live.
-// Inside the time span of the read, every stored bar must be in the read, and a new bar may
-// only fall in a gap between segments; anything else means history changed.
+// Inside the time span of the read, up to REVISED_SHARE of the stored bars may be missing from the
+// read, have a revised close, or have a new bar appear among them; more means history changed.
+// Revised closes are taken and those bars stop being live. New bars in a gap between segments
+// do not count.
 // Two neighbouring bars share a segment when they were neighbours in the store or in this read.
 export function mergeRead(store, read, { now, liveWindow, maxBars = MAX_BARS }) {
   const isLive = (t) => now - t <= liveWindow;
