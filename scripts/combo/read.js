@@ -17,7 +17,7 @@ export function buildReadExpr(wanted) {
   const model = chart._chartWidget.model();
   const rows = (x) => { const p = []; for (let i = x.firstIndex(); i <= x.lastIndex(); i++) { const v = x.valueAt(i); if (v) p.push(Array.from(v, (a) => (typeof a === 'number' && isFinite(a) ? a : null))); } return p; };
   let replay = false;
-  try { const v = api._replayApi.isReplayStarted(); replay = !!(v && typeof v.value === 'function' ? v.value() : v); } catch (e) { replay = false; }
+  try { const v = api._replayApi.isReplayStarted(); replay = !!(v && typeof v.value === 'function' ? v.value() : v); } catch (e) { replay = true; }
   const studies = [];
   for (const s of model.model().dataSources()) {
     let mi = null;
@@ -55,13 +55,13 @@ export function buildMoreExpr(symbol, resolution) {
   const chart = api._activeChartWidgetWV.value();
   let replay = true;
   try { const v = api._replayApi.isReplayStarted(); replay = !!(v && typeof v.value === 'function' ? v.value() : v); } catch (e) { replay = true; }
-  if (replay || chart.symbol() !== want[0] || chart.resolution() !== want[1]) return false;
+  if (replay || chart.symbol() !== want[0] || chart.resolution() !== want[1] || ![0, 1, 2, 3, 9].includes(chart.chartType())) return false;
   chart._chartWidget.model().mainSeries().requestMoreData(${MORE_BARS});
   return true;
 })()`;
 }
 
-const REPLAY_EXPR = `(() => { try { const v = window.TradingViewApi._replayApi.isReplayStarted(); return !!(v && typeof v.value === 'function' ? v.value() : v); } catch (e) { return false; } })()`;
+const REPLAY_EXPR = `(() => { try { const v = window.TradingViewApi._replayApi.isReplayStarted(); return !!(v && typeof v.value === 'function' ? v.value() : v); } catch (e) { return true; } })()`;
 
 async function evaluate(client, expression) {
   const r = await client.Runtime.evaluate({ expression, returnByValue: true });
@@ -69,13 +69,40 @@ async function evaluate(client, expression) {
   return r.result?.value;
 }
 
-// One read of the first TradingView chart page on port 9222. Adds replayAfter, a second replay
-// check made after the read, so a replay started mid-read is caught. With symbol and resolution,
-// asks for older history last (see buildMoreExpr).
+// Chart types whose bars are prices a trade could fill at: bars, candles, line, area, hollow candles.
+export const PRICE_TYPES = [0, 1, 2, 3, 9];
+const PAGE_EXPR = `(() => { const c = window.TradingViewApi._activeChartWidgetWV.value(); return { symbol: c.symbol(), resolution: c.resolution(), chartType: c.chartType() }; })()`;
+
+// The first chart tab showing the config symbol and timeframe on a price chart type, else the
+// first tab, so the cycle skips and logs why.
+export function pickPage(pages, { symbol, resolution }) {
+  return pages.find((p) => p.symbol === symbol && p.resolution === resolution && PRICE_TYPES.includes(p.chartType)) || pages[0];
+}
+
+async function choosePage(targets, port, want) {
+  if (!want.symbol || targets.length < 2) return targets[0];
+  const pages = [];
+  for (const t of targets) {
+    const c = await CDP({ port, target: t.id });
+    try {
+      pages.push({ id: t.id, ...(await evaluate(c, PAGE_EXPR)) });
+    } catch {
+      // a tab that cannot answer is not a candidate
+    } finally {
+      await c.close();
+    }
+  }
+  const hit = pickPage(pages, want);
+  return targets.find((t) => t.id === hit?.id) || targets[0];
+}
+
+// One read of a TradingView chart tab on port 9222, picked by pickPage. Adds replayAfter, a second
+// replay check made after the read, so a replay started mid-read is caught. With symbol and
+// resolution, asks for older history last (see buildMoreExpr).
 export async function readChart(wanted, { symbol = null, resolution = null, port = 9222 } = {}) {
-  const targets = await CDP.List({ port });
-  const page = targets.find((x) => x.type === 'page' && /tradingview\.com\/chart\//.test(x.url));
-  if (!page) throw new Error(`no TradingView chart page on port ${port}`);
+  const targets = (await CDP.List({ port })).filter((x) => x.type === 'page' && /tradingview\.com\/chart\//.test(x.url));
+  if (!targets.length) throw new Error(`no TradingView chart page on port ${port}`);
+  const page = await choosePage(targets, port, { symbol, resolution });
   const client = await CDP({ port, target: page.id });
   try {
     const raw = await evaluate(client, buildReadExpr(wanted));

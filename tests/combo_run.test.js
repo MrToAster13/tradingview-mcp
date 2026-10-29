@@ -12,7 +12,7 @@ import { mkdtempSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { buildReadExpr, buildMoreExpr } from '../scripts/combo/read.js';
+import { buildReadExpr, buildMoreExpr, pickPage } from '../scripts/combo/read.js';
 import { parseArgs, runCycle, runLoop, toJson, withTimeout } from '../scripts/combo/run.js';
 
 const series = (rows) => ({
@@ -98,6 +98,22 @@ describe('buildReadExpr', () => {
     const v = vm.runInNewContext(buildReadExpr([name, "y'); globalThis.pwned = 1; //"]), ctx);
     assert.equal(ctx.pwned, undefined);
     assert.ok(v.studies.every((s) => s.rows === null));
+  });
+});
+
+describe('pickPage', () => {
+  const want = { symbol: 'CME_MINI:MES1!', resolution: '1' };
+  it('picks the first chart tab on the config symbol and timeframe with real prices', () => {
+    const pages = [
+      { id: 'ha', symbol: 'CME_MINI:MES1!', resolution: '1', chartType: 8 },
+      { id: 'nq', symbol: 'CME_MINI:NQ1!', resolution: '1', chartType: 1 },
+      { id: 'candles', symbol: 'CME_MINI:MES1!', resolution: '1', chartType: 1 },
+    ];
+    assert.equal(pickPage(pages, want).id, 'candles');
+  });
+
+  it('falls back to the first tab when none match, so the cycle skips with its reason', () => {
+    assert.equal(pickPage([{ id: 'ha', symbol: 'CME_MINI:MES1!', resolution: '1', chartType: 8 }, { id: 'b', symbol: 'X', resolution: '1', chartType: 1 }], want).id, 'ha');
   });
 });
 

@@ -127,6 +127,14 @@ describe('mergeRead round 2 regressions', () => {
     assert.match(mergeRead(first, read(shifted), opts(2100)).skipped, /history changed/);
   });
 
+  it('takes a revised close from a read that starts later without taking its warm-up values', () => {
+    const bars = Array.from({ length: 20 }, (_, i) => b(100 * (i + 1), i + 1, { k: 5 }));
+    const first = mergeRead(null, read(bars), opts(100000)).store;
+    const later = bars.slice(1).map((x) => (x.t === 200 ? b(200, 2.25, { k: null }) : x));
+    const bar = mergeRead(first, read(later), opts(100000)).store.bars.find((x) => x.t === 200);
+    assert.deepEqual([bar.c, bar.v.k], [2.25, 5]);
+  });
+
   it('keeps at most maxBars bars, dropping the oldest', () => {
     const r = mergeRead(null, read([b(100, 1), b(200, 2), b(300, 3), b(400, 4)]), { ...opts(500), maxBars: 3 });
     assert.deepEqual(r.store.bars.map((x) => x.t), [200, 300, 400]);

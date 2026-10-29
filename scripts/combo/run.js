@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseConfig, resolveSignals, extractBars, readProblem, evaluate, renderMarkdown } from './engine.js';
 import { mergeRead, loadStore, saveStore, acquireLock } from './store.js';
-import { readChart } from './read.js';
+import { readChart, PRICE_TYPES } from './read.js';
 
 const USAGE = 'usage: node scripts/combo/run.js --config FILE --out DIR [--every MINUTES] [--once]\n       node scripts/combo/run.js --list';
 
@@ -39,7 +39,6 @@ export function parseArgs(argv) {
   return o;
 }
 
-const PRICE_TYPES = new Set([0, 1, 2, 3, 9]); // bars, candles, line, area, hollow candles
 const READ_TIMEOUT_MS = 60000;
 
 // JSON with Infinity written as "inf", which JSON.stringify would turn into null.
@@ -67,7 +66,7 @@ export async function runCycle({ config: rawConfig, out, read, now, every, log }
   if (raw.replay || raw.replayAfter) return skip('bar replay is running');
   if (raw.symbol !== config.symbol) return skip(`chart shows ${raw.symbol}, config wants ${config.symbol}`);
   if (raw.resolution !== config.resolution) return skip(`chart timeframe is ${raw.resolution}, config wants ${config.resolution}`);
-  if (raw.chartType != null && !PRICE_TYPES.has(raw.chartType)) return skip(`chart type ${raw.chartType} changes prices; use bars, candles, hollow candles, line or area`);
+  if (raw.chartType != null && !PRICE_TYPES.includes(raw.chartType)) return skip(`chart type ${raw.chartType} changes prices; use bars, candles, hollow candles, line or area`);
   const resolved = resolveSignals(config.signals, raw.studies);
   const problem = readProblem(raw, resolved);
   if (problem) return skip(problem);

@@ -83,7 +83,8 @@ export function mergeRead(store, read, { now, liveWindow, maxBars = MAX_BARS }) 
     const r = inRead.get(t) || null;
     let bar;
     if (s && r && revised.has(t)) {
-      bar = { ...s, o: r.o, h: r.h, l: r.l, c: r.c, v: { ...fill(s.v), ...r.v }, live: false, from: lo };
+      const take = lo <= (s.from ?? Infinity);
+      bar = { ...s, o: r.o, h: r.h, l: r.l, c: r.c, v: take ? { ...fill(s.v), ...r.v } : fill(s.v), live: false, from: take ? lo : s.from };
     } else if (s && s.live) {
       const v = fill(s.v);
       if (r) for (const k of newKeys) v[k] = r.v[k] ?? null;
