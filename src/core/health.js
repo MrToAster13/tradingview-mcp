@@ -429,6 +429,13 @@ export async function launch({ port, kill_existing, _deps } = {}) {
     throw new Error(`TradingView not found on ${platform}. Searched: ${candidates.join(', ')}. Launch manually with: /path/to/TradingView --remote-debugging-port=${cdpPort}`);
   }
 
+  // A TradingView that runs without CDP holds Electron's single-instance
+  // lock, so a second spawn exits and CDP never comes up. Report it instead.
+  // The MSIX path keeps its own handling below.
+  if (!killFirst && tvRunningAtStart && !(platform === 'win32' && WINDOWS_APPS_RE.test(tvPath))) {
+    throw new Error(`TradingView is running without CDP on port ${cdpPort}. Not killing it. Close it and retry, or pass kill_existing: true.`);
+  }
+
   const killExisting = async () => {
     try {
       if (platform === 'win32') deps.execSync('taskkill /F /IM TradingView.exe', { timeout: 5000 });

@@ -107,7 +107,7 @@ npm install
 
 TradingView Desktop must be running with Chrome DevTools Protocol enabled on port 9222.
 
-None of these paths kills a running TradingView by default. Each one first checks whether TradingView already answers on the port and stops there if it does. If TradingView runs without the debug port, the scripts stop with an error, and `tv_launch` reports that CDP did not come up. Close TradingView yourself and re-run, or opt in to the kill with `KILL_EXISTING=1` (scripts) or `kill_existing: true` (`tv_launch`).
+None of these paths kills a running TradingView by default. Each one first checks whether TradingView already answers on the port and stops there if it does. If TradingView runs without the debug port, the scripts and `tv_launch` stop with an error and start nothing. Close TradingView yourself and re-run, or opt in to the kill with `KILL_EXISTING=1` (scripts) or `kill_existing: true` (`tv_launch`).
 
 **Easiest: use the MCP tool** (auto-detects your install):
 > "Use tv_launch to start TradingView in debug mode"

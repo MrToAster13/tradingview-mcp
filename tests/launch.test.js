@@ -452,7 +452,7 @@ const HOST_TV_PATH = {
   win32: `${process.env.LOCALAPPDATA}\\TradingView\\TradingView.exe`,
 }[process.platform] || '/opt/TradingView/tradingview';
 
-function hostDeps({ cdpUpAtStart = false } = {}) {
+function hostDeps({ cdpUpAtStart = false, tvRunning = false } = {}) {
   const state = { spawned: [], killCmds: [], processKills: [], cdpUp: cdpUpAtStart };
   const deps = {
     existsSync: (p) => p === HOST_TV_PATH,
@@ -465,7 +465,7 @@ function hostDeps({ cdpUpAtStart = false } = {}) {
     delay: async () => {},
     probeCdp: async () => (state.cdpUp ? CDP_VERSION : null),
     processKill: (pid, sig) => { state.processKills.push({ pid, sig }); },
-    isTvRunning: async () => false,
+    isTvRunning: async () => tvRunning,
   };
   return { deps, state };
 }
@@ -487,6 +487,29 @@ describe('launch() — default never kills TradingView (ELI-696)', () => {
     assert.equal(result.already_running, true);
     assert.deepEqual(state.spawned, []);
     assert.deepEqual(state.killCmds, []);
+  });
+
+  it('TradingView running without CDP: refuses, spawns and kills nothing', async () => {
+    const { deps, state } = hostDeps({ tvRunning: true });
+    await assert.rejects(
+      () => launch({ _deps: deps }),
+      (err) => {
+        assert.match(err.message, /running without CDP on port 9222/);
+        assert.match(err.message, /kill_existing: true/);
+        return true;
+      },
+    );
+    assert.deepEqual(state.spawned, []);
+    assert.deepEqual(state.killCmds, []);
+    assert.deepEqual(state.processKills, []);
+  });
+
+  it('TradingView running without CDP, kill_existing: true: kills and relaunches', async () => {
+    const { deps, state } = hostDeps({ tvRunning: true });
+    const result = await launch({ kill_existing: true, _deps: deps });
+    assert.equal(result.success, true);
+    assert.equal(state.killCmds.length, 1);
+    assert.deepEqual(state.spawned, [HOST_TV_PATH]);
   });
 
   it('kill_existing: true on Linux and Mac kills by exact process name, never pkill -f', { skip: onWindows }, async () => {
