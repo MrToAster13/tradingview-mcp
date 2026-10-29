@@ -7,7 +7,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync, mkdtempSync, copyFileSync, chmodSync, rmSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, mkdtempSync, copyFileSync, symlinkSync, rmSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,7 +19,6 @@ const SCRIPTS = {
 };
 const hasPgrep = process.platform !== 'win32'
   && spawnSync('pgrep', ['-x', 'no-such-process-name-xyz'], { stdio: 'ignore' }).status === 1;
-const sleepBin = ['/bin/sleep', '/usr/bin/sleep'].find((p) => existsSync(p));
 
 function tvPidsFunction(file) {
   const src = readFileSync(file, 'utf8');
@@ -59,24 +58,33 @@ for (const [name, { file, binName }] of Object.entries(SCRIPTS)) {
       assert.match(src.slice(0, killAt), /KILL_EXISTING/);
     });
 
-    describe('tv_pids() against live processes', { skip: !hasPgrep || !sleepBin }, () => {
+    describe('tv_pids() against live processes', { skip: !hasPgrep }, () => {
       let dir; let server; let tv;
       before(async () => {
         dir = mkdtempSync(join(tmpdir(), 'tvmcp-pgrep-'));
         // Shaped like the MCP server: the name is node, the argv names tradingview-mcp.
         mkdirSync(join(dir, 'tradingview-mcp', 'src'), { recursive: true });
         server = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', join(dir, 'tradingview-mcp', 'src', 'server.js')], { stdio: 'ignore' });
-        // A process whose name is the TradingView binary.
+        // A process whose name is the TradingView binary. Node runs under any
+        // file name. A copy of sleep does not always: on Ubuntu 26.04 sleep is
+        // a multi-call coreutils binary that picks its tool by argv[0] and
+        // exits. Linux names the process after the symlink. Other systems get
+        // a copy, because they may name it after the symlink target.
         const fakeTv = join(dir, binName);
-        copyFileSync(sleepBin, fakeTv);
-        chmodSync(fakeTv, 0o755);
-        tv = spawn(fakeTv, ['30'], { stdio: 'ignore' });
+        if (process.platform === 'linux') symlinkSync(process.execPath, fakeTv);
+        else copyFileSync(process.execPath, fakeTv);
+        tv = spawn(fakeTv, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
         await settle();
       });
       after(() => {
         server?.kill();
         tv?.kill();
         rmSync(dir, { recursive: true, force: true });
+      });
+
+      it('keeps the fake TradingView process running until pgrep looks', () => {
+        assert.equal(tv.exitCode, null, 'fake TradingView process exited');
+        assert.equal(tv.signalCode, null, 'fake TradingView process was killed');
       });
 
       it('does not match the MCP server process', () => {
