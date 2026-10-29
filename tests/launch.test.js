@@ -306,12 +306,37 @@ describe('launch() — classic install path', { skip: !onWindows }, () => {
       readdirSync: () => [],
       delay: async () => {},
       probeCdp: async () => (state.cdpUp ? CDP_VERSION : null),
+      // Nothing is running. Without this, the default check runs tasklist
+      // through the execSync mock above, which throws, and a thrown check
+      // counts as running (ELI-696).
+      isTvRunning: async () => false,
     };
     const result = await launch({ _deps: deps });
     assert.equal(result.success, true);
     assert.equal(result.binary, classicExe);
     assert.equal(result.msix_local_copy, undefined);
     assert.deepEqual(state.spawned, [classicExe]);
+  });
+
+  it('classic install: a process check that throws counts as running, so it refuses', async () => {
+    const classicExe = `${process.env.LOCALAPPDATA}\\TradingView\\TradingView.exe`;
+    const state = { spawned: [], killCmds: [] };
+    const deps = {
+      existsSync: (p) => p === classicExe,
+      execSync: (cmd) => {
+        if (cmd.includes('taskkill')) { state.killCmds.push(cmd); return ''; }
+        throw new Error(`unexpected: ${cmd}`);
+      },
+      spawn: (exe) => { state.spawned.push(exe); return mockChild(); },
+      cpSync: () => { throw new Error('should not copy'); },
+      rmSync: () => {},
+      readdirSync: () => [],
+      delay: async () => {},
+      probeCdp: async () => null,
+    };
+    await assert.rejects(() => launch({ _deps: deps }), /running without CDP on port 9222/);
+    assert.deepEqual(state.spawned, []);
+    assert.deepEqual(state.killCmds, []);
   });
 
   it('throws a helpful error when TradingView is not found', async () => {
