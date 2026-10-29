@@ -6,8 +6,15 @@ hooks_dir=$(dirname "$0")
 status=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$local_sha" in *[!0]*) ;; *) continue ;; esac   # branch delete
+  # A remote tip missing from the local object store (someone else pushed
+  # since the last fetch) cannot bound the range, so fall back to every
+  # commit not on a known remote branch.
   case "$remote_sha" in
-    *[!0]*) range="$remote_sha..$local_sha" ;;
+    *[!0]*) if git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+              range="$remote_sha..$local_sha"
+            else
+              range="$local_sha --not --remotes=$remote"
+            fi ;;
     *) range="$local_sha --not --remotes=$remote" ;;
   esac
   # shellcheck disable=SC2086

@@ -123,3 +123,36 @@ describe('check-no-push on messages that only describe the hook', { skip: !hasGi
     assert.equal(r.status, 0, r.stderr);
   });
 });
+
+// Review finding TVMCP-R3: the check failed open. A range git could not
+// resolve gave an empty loop and exit 0, so nothing was checked.
+describe('check-no-push on a range git cannot resolve', { skip: !hasGit || onWindows }, () => {
+  const CHECK = join(HOOKS_DIR, 'check-no-push');
+  let dir;
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'tvmcp-range-'));
+    git(dir, 'init', '-q', '-b', 'main');
+    commit(dir, 'Base');
+  });
+  after(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('exits non-zero on an unresolvable range', () => {
+    const r = spawnSync(CHECK, ['bogus..HEAD'], { cwd: dir, encoding: 'utf8' });
+    assert.notEqual(r.status, 0, 'check passed a range it could not resolve');
+    assert.match(r.stderr, /cannot resolve/);
+  });
+
+  it('pre-push still checks the pushed commits when the remote tip is missing locally', () => {
+    git(dir, 'checkout', '-q', '-B', 'marked', 'main');
+    commit(dir, 'Private paths, do not push');
+    const localSha = git(dir, 'rev-parse', 'HEAD').out.trim();
+    const missing = 'deadbeef'.repeat(5);
+    const r = spawnSync(HOOK, ['origin', 'unused-url'], {
+      cwd: dir, encoding: 'utf8',
+      input: `refs/heads/marked ${localSha} refs/heads/marked ${missing}\n`,
+    });
+    assert.notEqual(r.status, 0, 'pre-push passed a marked commit');
+    assert.match(r.stderr, /do not push/i);
+    git(dir, 'checkout', '-q', 'main');
+  });
+});
