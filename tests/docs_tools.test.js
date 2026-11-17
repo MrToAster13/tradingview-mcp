@@ -53,8 +53,8 @@ describe('tool docs match the registry', () => {
     assert.deepEqual({ missing, extra }, { missing: [], extra: [] });
   });
 
-  it('every "N tools" count in README, CLAUDE.md and the server instructions matches', () => {
-    for (const file of ['README.md', 'CLAUDE.md', 'src/create_server.js']) {
+  it('every "N tools" count in README, CLAUDE.md, SETUP_GUIDE.md and the server instructions matches', () => {
+    for (const file of ['README.md', 'CLAUDE.md', 'SETUP_GUIDE.md', 'src/create_server.js']) {
       for (const m of read(file).matchAll(/\b(\d+) (?:MCP )?tools\b/g)) {
         assert.equal(Number(m[1]), tools.length, `${file}: "${m[0]}"`);
       }

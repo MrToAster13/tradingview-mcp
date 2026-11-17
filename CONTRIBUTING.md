@@ -48,6 +48,24 @@ A commit message that says "do not push" (or "don't push", "do-not-push") keeps 
 
 Core functions take an optional `_deps` parameter resolved via `_resolve(_deps)` so they're unit-testable — see `src/core/replay.js` or `src/core/health.js` for the pattern.
 
+## Merging upstream
+
+This fork tracks [tradesdontlie/tradingview-mcp](https://github.com/tradesdontlie/tradingview-mcp). `origin` points at the fork. A clone has an `upstream` remote only if someone added it, so add it once:
+
+```bash
+git remote add upstream https://github.com/tradesdontlie/tradingview-mcp.git
+git fetch upstream
+git fetch origin
+git switch -c merge-upstream-YYYY-MM-DD origin/main
+git merge upstream/main     # resolve conflicts here, never on main
+npm ci
+npm run lint
+npm test                    # offline suite, safe with TradingView open
+git push -u origin merge-upstream-YYYY-MM-DD
+```
+
+Then open a pull request into the fork's `main`. Merge with a merge commit, not a rebase, so the upstream history stays intact. If `git merge upstream/main` says "Already up to date", there is nothing to do.
+
 ## Pull Requests
 
 - Keep changes focused — one feature or fix per PR; bundled PRs (fix + config + docs) usually get closed in favor of the smallest equivalent
