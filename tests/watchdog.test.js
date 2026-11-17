@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   lastStoredAgeMin, checkTester, checkDevice, checkTradingView, diffEvents, runWatch,
-  pidAlive, parseState, RUN_BUDGET_MS, TV_UP_ARGS, readSettings, testerArgs,
+  pidAlive, parseState, RUN_BUDGET_MS, TV_UP_ARGS, readSettings, testerArgs, cdpAnswers,
 } from '../scripts/watchdog/desk_watch.js';
 import { tvUp } from '../scripts/tv_up.js';
 import { readFileSync } from 'node:fs';
@@ -277,5 +277,34 @@ describe('ELI-851: watchdog settings', () => {
     const { lines, warn } = collect();
     assert.equal(readSettings({ DESK_WATCH_TESTER_EVERY: '0' }, warn).testerEvery, 15, 'run.js refuses --every 0');
     assert.equal(lines.length, 1);
+  });
+});
+
+// ELI-853: one CDP probe. The watchdog and tv_up.js both use probeCdp from src/core/tv_process.js.
+describe('ELI-853: the watchdog and tv_up.js share probeCdp', () => {
+  it('cdpAnswers asks probeCdp for 127.0.0.1:9222 with the watchdog timeout', async () => {
+    const calls = [];
+    const probe = async (...args) => { calls.push(args); return '{"Browser":"x"}'; };
+    assert.equal(await cdpAnswers(probe), true);
+    assert.deepEqual(calls, [[9222, '127.0.0.1', { timeoutMs: 5000 }]]);
+  });
+
+  it('cdpAnswers counts an empty 200 body as up and null as down', async () => {
+    assert.equal(await cdpAnswers(async () => ''), true);
+    assert.equal(await cdpAnswers(async () => null), false);
+  });
+
+  it('cdpAnswers defaults to probeCdp from tv_process.js', () => {
+    const src = readFileSync(join(REPO_ROOT, 'scripts', 'watchdog', 'desk_watch.js'), 'utf8');
+    assert.match(src, /import \{[^}]*\bprobeCdp\b[^}]*\} from '\.\.\/\.\.\/src\/core\/tv_process\.js'/);
+    assert.match(src, /cdpAnswers\(probe = probeCdp\)/);
+  });
+
+  it('desk_watch.js and tv_up.js carry no CDP probe of their own', () => {
+    const watch = readFileSync(join(REPO_ROOT, 'scripts', 'watchdog', 'desk_watch.js'), 'utf8');
+    assert.ok(!/\bfetch\(/.test(watch), 'desk_watch.js still fetches');
+    const up = readFileSync(join(REPO_ROOT, 'scripts', 'tv_up.js'), 'utf8');
+    assert.ok(!up.includes('/json/version'), 'tv_up.js still probes /json/version itself');
+    assert.match(up, /import \{[^}]*\bprobeCdp\b[^}]*\} from '\.\.\/src\/core\/tv_process\.js'/);
   });
 });

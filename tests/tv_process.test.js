@@ -8,7 +8,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { ensureTradingView, isTvRunning, probeCdp } from '../src/core/tv_process.js';
+import { ensureTradingView, isTvRunning, probeCdp, tvProcessMatchCommand } from '../src/core/tv_process.js';
 
 function fakes({ cdpUp = false, running = false, stalls = 0, launchBringsCdp = true, launchThrows = null, warning } = {}) {
   const s = { cdpUp, running, stalls, calls: [], delays: [] };
@@ -143,5 +143,36 @@ describe('probeCdp()', () => {
     const { port } = srv;
     await srv.close();
     assert.equal(await probeCdp(port), null);
+  });
+});
+
+describe('ELI-853: probeCdp timeout and the shared process match', () => {
+  async function slow(ms) {
+    const server = http.createServer((req, res) => { setTimeout(() => { res.writeHead(200); res.end('late'); }, ms); });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    return { port: server.address().port, close: () => new Promise((r) => { server.closeAllConnections?.(); server.close(r); }) };
+  }
+
+  it('probeCdp gives up after timeoutMs', async () => {
+    const srv = await slow(400);
+    try { assert.equal(await probeCdp(srv.port, '127.0.0.1', { timeoutMs: 100 }), null); } finally { await srv.close(); }
+  });
+
+  it('probeCdp waits up to timeoutMs for a slow answer', async () => {
+    const srv = await slow(400);
+    try { assert.equal(await probeCdp(srv.port, '127.0.0.1', { timeoutMs: 3000 }), 'late'); } finally { await srv.close(); }
+  });
+
+  it('tvProcessMatchCommand matches the exact process name, never the full command line', () => {
+    assert.equal(tvProcessMatchCommand('darwin'), 'pgrep -x TradingView');
+    assert.equal(tvProcessMatchCommand('linux'), 'pgrep -i -x tradingview');
+  });
+
+  it('isTvRunning runs the command tvProcessMatchCommand names', () => {
+    for (const platform of ['darwin', 'linux']) {
+      let ran;
+      isTvRunning({ platform, execSync: (cmd) => { ran = cmd; return ''; } });
+      assert.equal(ran, tvProcessMatchCommand(platform));
+    }
   });
 });
