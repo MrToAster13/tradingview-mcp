@@ -1,7 +1,7 @@
 // The combo tester's bar store: merging chart reads, the atomic save, and the run lock.
 // A store is { version, symbol, resolution, keys, inputs, bars }, bars oldest first, each
 // { t, o, h, l, c, seg, live, v: { key: value } }. See docs/combo-tester.md, "The store".
-import { readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, openSync, closeSync, unlinkSync, existsSync, linkSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const MAX_BARS = 200000;
@@ -140,21 +140,45 @@ function alive(pid) {
   }
 }
 
+// A lock with no pid in it is a starter between creating the file and writing its pid, unless it
+// is older than this; then the starter died in between (ELI-851).
+const EMPTY_LOCK_GRACE_MS = 60000;
+// Create path holding this pid, or throw EEXIST. The pid goes into a temp file that is then
+// hard-linked to path, so path never exists without the pid in it. A file system without hard
+// links (FAT, exFAT; Windows reports EISDIR there) falls back to create-then-write, and the empty
+// lock rule in acquireLock covers the gap. Any other cause fails the same way in openSync.
+function createLock(path, link) {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, String(process.pid));
+  try {
+    link(tmp, path);
+  } catch (e) {
+    if (e.code === 'EEXIST') throw e;
+    const fd = openSync(path, 'wx');
+    writeFileSync(fd, String(process.pid));
+    closeSync(fd);
+  } finally {
+    try { unlinkSync(tmp); } catch { /* already gone */ }
+  }
+}
+
 // Take dir/lock for this process. Throws when another live process holds it; a lock left by a
-// dead process is taken over. Returns a function that releases the lock.
-export function acquireLock(dir) {
+// dead process is taken over. Returns a function that releases the lock. `link` is for tests.
+export function acquireLock(dir, { link = linkSync } = {}) {
   const path = join(dir, 'lock');
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = openSync(path, 'wx');
-      writeFileSync(fd, String(process.pid));
-      closeSync(fd);
+      createLock(path, link);
       return () => {
         try { unlinkSync(path); } catch { /* already gone */ }
       };
     } catch (e) {
       if (e.code !== 'EEXIST') throw e;
-      const pid = Number(readFileSync(path, 'utf8'));
+      const text = readFileSync(path, 'utf8').trim();
+      if (text === '' && Date.now() - statSync(path).mtimeMs < EMPTY_LOCK_GRACE_MS) {
+        throw new Error(`another run holds ${path}; it is starting and has not written its pid yet`);
+      }
+      const pid = Number(text);
       if (Number.isInteger(pid) && pid > 0 && alive(pid)) throw new Error(`another run (pid ${pid}) holds ${path}`);
       unlinkSync(path);
     }

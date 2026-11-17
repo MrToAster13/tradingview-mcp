@@ -179,3 +179,40 @@ describe('update() — origin must be this fork (ELI-695)', () => {
     assert.ok(!/tradesdontlie/.test(r.error));
   });
 });
+
+// ELI-851 item 5: git failures after the guards return { success: false, error } in one line
+// instead of throwing raw git output into the tool result.
+describe('update() — git failures return one line (ELI-851)', () => {
+  const gitError = (cmd, stderr) => Object.assign(new Error(`Command failed: git ${cmd}\n${stderr}`), { stderr: Buffer.from(stderr) });
+
+  it('returns { success: false, error } with one line when merge --ff-only fails', async () => {
+    const { deps } = gitDeps({ remoteSha: NEW, behind: 1 });
+    const orig = deps.execSync;
+    deps.execSync = (cmd) => {
+      if (cmd.includes('merge --ff-only')) throw gitError('merge --ff-only origin/main', 'error: Your local changes to the following files would be overwritten by merge:\n\tsrc/server.js\nAborting\n');
+      return orig(cmd);
+    };
+    const r = await update({ _deps: deps });
+    assert.equal(r.success, false);
+    assert.equal(typeof r.error, 'string');
+    assert.doesNotMatch(r.error, /\n/);
+    assert.match(r.error, /merge --ff-only/);
+    assert.match(r.error, /would be overwritten by merge/);
+  });
+
+  for (const step of ['status --porcelain', 'rev-parse HEAD', 'rev-parse origin/main', 'rev-list --count origin/main..HEAD', 'rev-list --count HEAD..origin/main', 'diff --name-only']) {
+    it(`returns { success: false } instead of throwing when git ${step} fails`, async () => {
+      const { deps, state } = gitDeps({ remoteSha: NEW, behind: 1 });
+      const orig = deps.execSync;
+      deps.execSync = (cmd) => {
+        if (cmd.includes(step) && !cmd.includes('--abbrev-ref')) throw gitError(step, 'fatal: bad object HEAD\nmore detail');
+        return orig(cmd);
+      };
+      const r = await update({ _deps: deps });
+      assert.equal(r.success, false);
+      assert.doesNotMatch(r.error, /\n/);
+      assert.match(r.error, /bad object HEAD/);
+      assert.ok(!state.cmds.some((c) => c.includes('merge')), 'no merge attempted');
+    });
+  }
+});
