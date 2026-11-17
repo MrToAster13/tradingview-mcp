@@ -12,6 +12,7 @@
     "./core": "./src/core/index.js"
   },
   "scripts": {
+    "prepare": "node scripts/install_hooks.js",
     "start": "node src/server.js",
     "tv": "node src/cli/index.js",
     "lint": "eslint src/",
