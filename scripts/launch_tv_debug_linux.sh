@@ -1,95 +1,12 @@
 #!/bin/bash
-# Launch TradingView Desktop on Linux with Chrome DevTools Protocol enabled
+# Launch TradingView Desktop on Linux with Chrome DevTools Protocol enabled.
 # Usage: ./scripts/launch_tv_debug_linux.sh [port]
 #
-# If TradingView already answers CDP on the port, this prints its version and
-# exits. If TradingView runs without CDP, it stops and kills nothing, unless
-# KILL_EXISTING=1 is set. Prefer `node scripts/tv_up.js`, which never kills.
+# A thin wrapper over `node scripts/tv_up.js --no-http` (ELI-853), which holds
+# the one bring-up rule in src/core/tv_process.js: if TradingView answers CDP
+# on the port, do nothing; if it runs without CDP, stop and kill nothing;
+# launch it only when none runs. The install lookup is launch() in
+# src/core/health.js.
 
 PORT="${1:-9222}"
-
-# PIDs of running TradingView processes, matched on the exact process name.
-# A full command line match would also find the MCP server, whose path holds
-# "tradingview-mcp".
-tv_pids() {
-  pgrep -i -x tradingview
-}
-
-# 127.0.0.1, not localhost: localhost can resolve to IPv6 ::1, where
-# Electron's debug server does not listen.
-if curl -s "http://127.0.0.1:$PORT/json/version" > /dev/null 2>&1; then
-  echo "TradingView already answers CDP at http://127.0.0.1:$PORT. Nothing to do."
-  exit 0
-fi
-
-# Auto-detect TradingView install location
-APP=""
-LOCATIONS=(
-  "/opt/TradingView/tradingview"
-  "/opt/TradingView/TradingView"
-  "$HOME/.local/share/TradingView/TradingView"
-  "/usr/bin/tradingview"
-  "/usr/local/bin/tradingview"
-  "/snap/tradingview/current/tradingview"
-  "/var/lib/flatpak/app/com.tradingview.TradingView/current/active/files/bin/tradingview"
-  "$HOME/.local/share/flatpak/app/com.tradingview.TradingView/current/active/files/bin/tradingview"
-)
-
-for loc in "${LOCATIONS[@]}"; do
-  if [ -f "$loc" ] && [ -x "$loc" ]; then
-    APP="$loc"
-    break
-  fi
-done
-
-# Fallback: which / whereis
-if [ -z "$APP" ]; then
-  APP=$(which tradingview 2>/dev/null || which TradingView 2>/dev/null)
-fi
-
-# Fallback: find in common dirs
-if [ -z "$APP" ]; then
-  APP=$(find /opt /usr/local /snap "$HOME/.local" -name "tradingview" -o -name "TradingView" -type f -executable 2>/dev/null | head -1)
-fi
-
-if [ -z "$APP" ] || [ ! -f "$APP" ]; then
-  echo "Error: TradingView not found."
-  echo "Checked: /opt/TradingView, ~/.local/share/TradingView, snap, flatpak, PATH"
-  echo ""
-  echo "If installed elsewhere, run manually:"
-  echo "  /path/to/tradingview --remote-debugging-port=$PORT"
-  exit 1
-fi
-
-if [ -n "$(tv_pids)" ]; then
-  if [ "${KILL_EXISTING:-0}" != "1" ]; then
-    echo "Error: TradingView is running without CDP on port $PORT. Not killing it."
-    echo "Close TradingView yourself and re-run, or re-run with KILL_EXISTING=1 to kill it."
-    exit 1
-  fi
-  echo "KILL_EXISTING=1: killing the running TradingView."
-  tv_pids | xargs kill 2>/dev/null
-  sleep 1
-fi
-
-echo "Found TradingView at: $APP"
-echo "Launching with --remote-debugging-port=$PORT ..."
-# Claude Code / T3 Code set ELECTRON_RUN_AS_NODE=1; inherited, it makes Electron
-# run as plain Node and reject --remote-debugging-port ("bad option").
-unset ELECTRON_RUN_AS_NODE
-"$APP" --remote-debugging-port=$PORT &
-TV_PID=$!
-echo "PID: $TV_PID"
-
-# Wait for CDP to be ready
-echo "Waiting for CDP..."
-for i in $(seq 1 15); do
-  if curl -s "http://127.0.0.1:$PORT/json/version" > /dev/null 2>&1; then
-    echo "CDP ready at http://127.0.0.1:$PORT"
-    curl -s "http://127.0.0.1:$PORT/json/version" | python3 -m json.tool 2>/dev/null || curl -s "http://127.0.0.1:$PORT/json/version"
-    exit 0
-  fi
-  sleep 1
-done
-
-echo "Warning: CDP not responding after 15s. TradingView may still be loading."
+TV_CDP_PORT="$PORT" exec node "$(dirname "$0")/tv_up.js" --no-http

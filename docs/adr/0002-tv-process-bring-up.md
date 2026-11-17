@@ -18,4 +18,10 @@ Two copies of "is TradingView running" existed. `scripts/tv_up.js` had an async 
 
 - One process check. A fix to it reaches both callers.
 - `tests/tv_process.test.js` tests the bring-up rules directly. `tests/tv_up.test.js` injects `probeCdp` instead of faking `/json/version` through `httpRequest`.
-- Not changed: `scripts/launch_tv_debug.bat` still runs `taskkill /F /IM TradingView.exe`. That line is upstream and the script is run by hand. Follow-up: make the .bat check first and refuse like `ensureTradingView`, or stop documenting it as the bring-up path.
+- Superseded by the update below: `scripts/launch_tv_debug.bat` still runs `taskkill /F /IM TradingView.exe`. That line is upstream and the script is run by hand. Follow-up: make the .bat check first and refuse like `ensureTradingView`, or stop documenting it as the bring-up path.
+
+## Update 2026-11-16 (ELI-853)
+
+- `scripts/launch_tv_debug.bat`, `launch_tv_debug_mac.sh` and `launch_tv_debug_linux.sh` are thin wrappers that run `node scripts/tv_up.js --no-http` with the port argument as `TV_CDP_PORT`. Their own CDP probes, process checks, install lookups and `KILL_EXISTING` kill are gone, so every launch script follows `ensureTradingView` and none can kill TradingView.
+- `scripts/launch_tv_debug.vbs` is removed. It started TradingView through AppsFolder with no CDP or running check, and no doc named it.
+- The desk watchdog probes CDP through `probeCdp` (5 second timeout via its new `timeoutMs` option) instead of its own `fetch`. `tvProcessMatchCommand(platform)` names the pgrep command `isTvRunning` runs on macOS and Linux.
