@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Desktop watchdog (ELI-754). Hermes runs this every 5 minutes on the Windows desktop through
 // a thin no-agent cron wrapper. Each run checks, and repairs where it safely can:
-//   - TradingView answering CDP on :9222 and the MCP HTTP server on :8765. Either down -> run
-//     scripts/tv_up.js, which launches TradingView only when none runs (it never kills one),
-//     starts the HTTP server and fixes the Funnel.
+//   - TradingView answering CDP on :9222. Down -> run `scripts/tv_up.js --no-http`, which
+//     launches TradingView only when none runs (it never kills one). The watchdog leaves the
+//     MCP HTTP server and the Funnel alone, so their idle shutdown keeps the Funnel closed
+//     (ELI-848, ELI-756). Start a remote session with `node scripts/tv_up.js`.
 //   - The combo tester (docs/combo-tester.md). Lock holder dead -> start it again, detached.
 //     No successful "stored" cycle for over 35 minutes -> alert. Skip and failure lines do not
 //     count, so a frozen chart, the wrong tab, changed history or a corrupt store all show up.
@@ -59,22 +60,21 @@ export function checkDevice({ freeGb, memPct, diskMinGb, memMaxPct }) {
 }
 
 const CDP_URL = 'http://127.0.0.1:9222/json/version';
-const MCP_URL = 'http://127.0.0.1:8765/health';
+// CDP-only bring-up: no API key, no HTTP server, no Funnel (ELI-848).
+export const TV_UP_ARGS = ['scripts/tv_up.js', '--no-http'];
 
 export async function checkTradingView({ up, tvUp, sleep }) {
-  const cdp = await up(CDP_URL);
-  const http = await up(MCP_URL);
-  if (cdp && http) return { state: 'ok' };
+  if (await up(CDP_URL)) return { state: 'ok' };
   const r = await tvUp();
   await sleep();
-  if ((await up(CDP_URL)) && (await up(MCP_URL))) {
-    return { state: 'ok', repaired: true, msg: `TradingView stack was down (${cdp ? 'MCP server' : 'CDP'}); tv_up brought it back.` };
+  if (await up(CDP_URL)) {
+    return { state: 'ok', repaired: true, msg: 'TradingView was not answering CDP; tv_up brought it back.' };
   }
-  return { state: 'down', msg: `TradingView stack is down and tv_up did not fix it (exit ${r?.code}: ${r?.tail ?? ''}). If TradingView is open without debugging, close it.` };
+  return { state: 'down', msg: `TradingView is not answering CDP and tv_up did not fix it (exit ${r?.code}: ${r?.tail ?? ''}). If TradingView is open without debugging, close it.` };
 }
 
 const RECOVERED = {
-  tradingview: 'TradingView stack is healthy again.',
+  tradingview: 'TradingView is answering CDP again.',
   tester: 'Combo tester is logging again: its last cycle succeeded.',
   device: 'Desktop disk and memory are back within limits.',
 };
@@ -117,8 +117,8 @@ const SETTLE_MS = 20000;
 const PROBE_MS = 5000;
 const SSH_TIMEOUT_MS = 20000;
 const RESTART_WAIT_MS = 5000;
-// Worst case for one run: tv_up, the settle wait, four probes, the restart check, relay and heartbeat.
-export const RUN_BUDGET_MS = TV_UP_TIMEOUT_MS + SETTLE_MS + 4 * PROBE_MS + RESTART_WAIT_MS + 2 * SSH_TIMEOUT_MS;
+// Worst case for one run: tv_up, the settle wait, two CDP probes, the restart check, relay and heartbeat.
+export const RUN_BUDGET_MS = TV_UP_TIMEOUT_MS + SETTLE_MS + 2 * PROBE_MS + RESTART_WAIT_MS + 2 * SSH_TIMEOUT_MS;
 
 export async function runWatch({ checks, prev, relay, heartbeat }) {
   const results = {};
@@ -180,7 +180,7 @@ function realChecks(s) {
     tradingview: () => checkTradingView({
       up,
       tvUp: async () => {
-        const r = spawnSync(process.execPath, ['scripts/tv_up.js'], { cwd: s.mcpRepo, encoding: 'utf8', timeout: TV_UP_TIMEOUT_MS, windowsHide: true });
+        const r = spawnSync(process.execPath, TV_UP_ARGS, { cwd: s.mcpRepo, encoding: 'utf8', timeout: TV_UP_TIMEOUT_MS, windowsHide: true });
         return { code: r.status, tail: (r.stdout || '').trim().split(/\r?\n/).pop()?.slice(0, 200) };
       },
       sleep: () => new Promise((r) => setTimeout(r, SETTLE_MS)),
