@@ -223,16 +223,34 @@ tv stream all                            # all panes at once (multi-symbol)
 
 `node src/server.js --http` serves MCP over Streamable HTTP on `127.0.0.1:8765` (`TV_MCP_HTTP_PORT`), with `POST /mcp` behind a bearer key in `TV_MCP_API_KEY` (at least 32 characters) and an unauthenticated `GET /health`. `scripts/tv_up.js` starts it and can put it on the internet through Tailscale Funnel on port 8443.
 
-Because that port can be public, HTTP mode registers every tool except these six, which stay stdio-only:
+Because that port can be public, HTTP mode registers only an allow list of tools that read the chart or draw on it. `HTTP_ALLOWED_TOOLS` in `src/create_server.js` holds the list, with a line per tool that says what it reads or draws. Every other tool is stdio-only, and `STDIO_ONLY_TOOLS` in the same file gives the reason for each. `tests/http_tools.test.js` fails when a tool in `src/tools/*.js` is in neither list, so a tool from an upstream merge stays off HTTP until someone puts it in one.
 
-| Tool | Why it is stdio-only |
-|------|----------------------|
-| `ui_evaluate` | Runs any JavaScript in the logged-in TradingView page |
-| `tv_update` | Fetches code and runs `npm ci` on the host |
-| `tv_launch` | Starts, and can kill, TradingView on the host |
-| `ui_type_text`, `ui_mouse_click`, `ui_keyboard` | Drive the desktop app's input |
+### Allowed over HTTP
 
-The list lives in `HTTP_BLOCKED_TOOLS` in `src/create_server.js`, and `tests/http.test.js` checks that `tools/list` in HTTP mode leaves them out. A failed login logs the socket address plus the `X-Forwarded-For` and `Tailscale-User-Login` headers when the proxy sends them, because behind Funnel the socket address is always loopback.
+| Kind | Tools |
+|------|-------|
+| Chart and symbol reads | `chart_get_state`, `chart_get_visible_range`, `symbol_info`, `symbol_search`, `quote_get`, `depth_get` |
+| Data reads | `data_get_ohlcv`, `data_get_indicator`, `data_get_study_values`, `data_get_pine_lines`, `data_get_pine_labels`, `data_get_pine_tables`, `data_get_pine_boxes` |
+| Strategy Tester reads. They open that panel and unhide a hidden strategy so the report computes | `data_get_strategy_results`, `data_get_trades`, `data_get_equity` |
+| Pine reads. The editor reads open the Pine Editor | `pine_get_source`, `pine_get_errors`, `pine_get_console`, `pine_list_scripts`, `pine_analyze`, `pine_check` |
+| Other reads | `tv_health_check`, `tv_discover`, `tv_ui_state`, `alert_list`, `watchlist_get`, `indicator_search`, `replay_status`, `layout_list`, `pane_list`, `tab_list` |
+| Drawing | `draw_shape`, `draw_list`, `draw_get_properties`, `draw_remove_one`, `draw_trades_from_csv` |
+
+`quote_get` with a `symbol` argument switches the chart to that symbol and back.
+
+### Stdio-only
+
+Everything else stays stdio-only, and `STDIO_ONLY_TOOLS` gives the reason for each. That includes:
+
+- every tool that changes the chart symbol, timeframe, studies or panes, edits or saves Pine scripts, creates or deletes alerts, edits the watchlist, opens or closes tabs and layouts, or runs replay.
+- `ui_click` and `ui_open_panel`, which together can press an order button in the trading panel.
+- `draw_clear`, which removes every drawing in one call, hand-drawn ones included. `draw_remove_one` stays allowed, so a client can still remove any one drawing by id.
+- `capture_screenshot`, which returns a path on the host rather than the image. Its `api` method asks TradingView for its own snapshot.
+- the tools that run code or drive input: `ui_evaluate`, `tv_update`, `tv_launch`, `ui_type_text`, `ui_mouse_click` and `ui_keyboard`.
+
+In HTTP mode the server instructions tell the client that a tool missing from `tools/list` is stdio-only.
+
+`tests/http.test.js` checks that `tools/list` over HTTP returns exactly the allowed set and that a call to a stdio-only tool fails with "not found". A failed login logs the socket address plus the `X-Forwarded-For` and `Tailscale-User-Login` headers when the proxy sends them, because behind Funnel the socket address is always loopback.
 
 ## How Claude Knows Which Tool to Use
 
@@ -252,6 +270,8 @@ Claude reads [`CLAUDE.md`](CLAUDE.md) automatically when working in this project
 | "Take a screenshot" | `capture_screenshot` |
 
 ## Tool Reference (86 MCP tools)
+
+HTTP mode registers only the tools in [Allowed over HTTP](#allowed-over-http). The rest are stdio-only.
 
 ### Chart Reading
 
