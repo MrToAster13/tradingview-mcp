@@ -47,7 +47,7 @@ Mac:
 
 Windows:
 
-TradingView for Windows now ships **only as an MSIX package** (Microsoft Store and tvd-packages.tradingview.com both install under `C:\Program Files\WindowsApps\`). Use the launch script — it resolves the install via `Get-AppxPackage`, which works without admin rights:
+TradingView for Windows now ships **only as an MSIX package** (Microsoft Store and tvd-packages.tradingview.com both install under `C:\Program Files\WindowsApps\`). Use the launch script. It runs `node scripts	v_up.js --no-http`, which resolves the install via `Get-AppxPackage` (no admin rights needed) and never kills a running TradingView:
 
 ```bat
 scripts\launch_tv_debug.bat

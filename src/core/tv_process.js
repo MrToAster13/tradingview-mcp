@@ -22,20 +22,30 @@ export function isTvRunning({ execSync = _execSync, platform = process.platform 
       return /TradingView\.exe/i.test(out);
     } catch { return true; }
   }
-  // Exact process-name match; -f would also match this repo's own path.
-  const cmd = platform === 'darwin' ? 'pgrep -x TradingView' : 'pgrep -i -x tradingview';
   try {
-    execSync(cmd, { timeout: 5000, stdio: 'ignore' });
+    execSync(tvProcessMatchCommand(platform), { timeout: 5000, stdio: 'ignore' });
     return true;
   } catch (e) {
     return e?.status !== 1; // pgrep exits 1 when nothing matches
   }
 }
 
-/** GET http://<host>:<port>/json/version. Resolves the body ('' if empty) on HTTP 200, else null. */
-export function probeCdp(port, host = LOCAL) {
+/**
+ * The pgrep command that finds a running TradingView on macOS or Linux.
+ * Exact process-name match; -f would also match this repo's own path.
+ */
+export function tvProcessMatchCommand(platform = process.platform) {
+  return platform === 'darwin' ? 'pgrep -x TradingView' : 'pgrep -i -x tradingview';
+}
+
+/**
+ * GET http://<host>:<port>/json/version. Resolves the body ('' if empty) on
+ * HTTP 200, else null. The one CDP probe: ensureTradingView (so tv_up.js and
+ * tv_launch) and the desk watchdog all use it.
+ */
+export function probeCdp(port, host = LOCAL, { timeoutMs = 2000 } = {}) {
   return new Promise((done) => {
-    const req = http.request(`http://${host}:${port}/json/version`, { timeout: 2000, agent: false }, (res) => {
+    const req = http.request(`http://${host}:${port}/json/version`, { timeout: timeoutMs, agent: false }, (res) => {
       let data = '';
       res.setEncoding('utf8');
       res.on('data', (c) => { if (data.length < 65536) data += c; });

@@ -17,6 +17,7 @@ import { join, resolve, dirname } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { freemem, totalmem } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { probeCdp } from '../../src/core/tv_process.js';
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const STORED = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}) stored /;
@@ -59,7 +60,9 @@ export function checkDevice({ freeGb, memPct, diskMinGb, memMaxPct }) {
   return problems.length ? { state: 'low', msg: `Desktop: ${problems.join(' and ')}.` } : { state: 'ok' };
 }
 
-const CDP_URL = 'http://127.0.0.1:9222/json/version';
+const CDP_HOST = '127.0.0.1';
+const CDP_PORT = 9222;
+const CDP_URL = `http://${CDP_HOST}:${CDP_PORT}/json/version`;
 // CDP-only bring-up: no API key, no HTTP server, no Funnel (ELI-848).
 export const TV_UP_ARGS = ['scripts/tv_up.js', '--no-http'];
 
@@ -175,14 +178,12 @@ export function testerArgs(s) {
   return ['scripts/combo/run.js', '--config', s.testerConfig, '--out', s.testerOut, '--every', String(s.testerEvery)];
 }
 
-async function up(url) {
-  try {
-    const r = await fetch(url, { signal: AbortSignal.timeout(PROBE_MS) });
-    return r.status === 200;
-  } catch {
-    return false;
-  }
+// Whether TradingView answers CDP, through the shared probe in src/core/tv_process.js (ELI-853).
+export async function cdpAnswers(probe = probeCdp) {
+  return (await probe(CDP_PORT, CDP_HOST, { timeoutMs: PROBE_MS })) != null;
 }
+
+const up = () => cdpAnswers();
 
 function ssh(command, input = '') {
   const r = spawnSync('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', 'macmini', command], { input, timeout: SSH_TIMEOUT_MS, windowsHide: true });
