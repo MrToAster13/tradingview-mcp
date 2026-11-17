@@ -60,3 +60,11 @@ describe('CONTRIBUTING.md', () => {
     }
   });
 });
+
+describe('lint scope', () => {
+  it('npm run lint covers src/, scripts/ and tests/', () => {
+    const lint = JSON.parse(read('package.json')).scripts.lint.split(/\s+/);
+    assert.equal(lint[0], 'eslint');
+    for (const dir of ['src/', 'scripts/', 'tests/']) assert.ok(lint.includes(dir), `lint skips ${dir}`);
+  });
+});
