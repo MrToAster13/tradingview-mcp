@@ -6,7 +6,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, readdirSync, writeFileSync, existsSync, readFileSync, utimesSync, linkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mergeRead, loadStore, saveStore, acquireLock } from '../scripts/combo/store.js';
@@ -178,5 +178,52 @@ describe('acquireLock', () => {
     writeFileSync(join(dir, 'lock'), '99999999');
     const release2 = acquireLock(dir);
     release2();
+  });
+
+  // ELI-851 item 4: a starter creates the lock, then writes its pid. A second starter that reads
+  // the lock in between must not take it as dead.
+  it('treats a fresh empty lock as held, so a second acquireLock throws', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'combo-'));
+    writeFileSync(join(dir, 'lock'), '');
+    assert.throws(() => acquireLock(dir), /another run/);
+    assert.equal(existsSync(join(dir, 'lock')), true, 'the lock is left alone');
+  });
+
+  it('takes over an empty lock that is old enough to be left from a crash', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'combo-'));
+    writeFileSync(join(dir, 'lock'), '');
+    const old = new Date(Date.now() - 10 * 60000);
+    utimesSync(join(dir, 'lock'), old, old);
+    const release = acquireLock(dir);
+    assert.equal(readFileSync(join(dir, 'lock'), 'utf8'), String(process.pid));
+    release();
+  });
+
+  it('leaves the pid in the lock and no temp file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'combo-'));
+    const release = acquireLock(dir);
+    assert.deepEqual(readdirSync(dir), ['lock']);
+    assert.equal(readFileSync(join(dir, 'lock'), 'utf8'), String(process.pid));
+    release();
+  });
+
+  it('holds the pid at the moment the lock file appears', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'combo-'));
+    let seen = null;
+    const release = acquireLock(dir, { link: (from, to) => { linkSync(from, to); seen = readFileSync(to, 'utf8'); } });
+    assert.equal(seen, String(process.pid));
+    release();
+  });
+
+  // Review finding: on Windows, a hard link on FAT or exFAT fails with EISDIR, not EPERM.
+  it('falls back to create-then-write when the file system has no hard links, whatever the error code', () => {
+    for (const code of ['EISDIR', 'EPERM', 'EXDEV']) {
+      const dir = mkdtempSync(join(tmpdir(), 'combo-'));
+      const release = acquireLock(dir, { link: () => { throw Object.assign(new Error(`link: ${code}`), { code }); } });
+      assert.deepEqual(readdirSync(dir), ['lock'], code);
+      assert.equal(readFileSync(join(dir, 'lock'), 'utf8'), String(process.pid), code);
+      assert.throws(() => acquireLock(dir), /another run/, code);
+      release();
+    }
   });
 });

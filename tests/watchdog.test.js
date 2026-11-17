@@ -9,8 +9,14 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   lastStoredAgeMin, checkTester, checkDevice, checkTradingView, diffEvents, runWatch,
-  pidAlive, parseState, RUN_BUDGET_MS,
+  pidAlive, parseState, RUN_BUDGET_MS, TV_UP_ARGS, readSettings, testerArgs,
 } from '../scripts/watchdog/desk_watch.js';
+import { tvUp } from '../scripts/tv_up.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const at = (iso) => Date.parse(iso + 'Z');
 const LOG = [
@@ -71,14 +77,75 @@ describe('checkTradingView', () => {
     assert.deepEqual([r.state, calls], ['ok', 0]);
   });
 
-  it('runs tv_up when either is down, and reports a repair or a failure', async () => {
+  // ELI-848: the watchdog checks CDP only. tv_up runs when CDP is down.
+  it('runs tv_up when CDP is down, and reports a repair or a failure', async () => {
     let n = 0;
     const flaky = async (url) => (url.includes('9222') ? n++ > 0 : true);
     const fixed = await checkTradingView({ up: flaky, tvUp: async () => ({ code: 0, tail: 'ok' }), sleep: async () => {} });
     assert.deepEqual([fixed.state, fixed.repaired], ['ok', true]);
-    const broken = await checkTradingView({ up: async (url) => !url.includes('8765'), tvUp: async () => ({ code: 1, tail: 'refused' }), sleep: async () => {} });
+    const broken = await checkTradingView({ up: async () => false, tvUp: async () => ({ code: 1, tail: 'refused' }), sleep: async () => {} });
     assert.equal(broken.state, 'down');
     assert.match(broken.msg, /exit 1: refused/);
+  });
+});
+
+// ELI-848: the HTTP server exits on idle and closes the Funnel (ELI-756). The watchdog must not
+// bring either back, and must not report the idle exit as a repair.
+describe('ELI-848: the watchdog leaves the HTTP server and the Funnel alone', () => {
+  it('does not run tv_up or send an event when only the HTTP server is down after an idle exit', async () => {
+    const probed = [];
+    let tvUpRuns = 0;
+    const sent = [];
+    const up = async (url) => { probed.push(url); return url.includes(':9222/'); };
+    const out = await runWatch({
+      checks: { tradingview: () => checkTradingView({ up, tvUp: async () => { tvUpRuns++; return { code: 0 }; }, sleep: async () => {} }) },
+      prev: { tradingview: 'ok' }, relay: async (t) => sent.push(t), heartbeat: async () => {},
+    });
+    assert.equal(tvUpRuns, 0);
+    assert.deepEqual(sent, []);
+    assert.deepEqual(out, { state: { tradingview: 'ok' }, events: [] });
+    assert.deepEqual(probed.filter((u) => !u.includes(':9222/')), [], 'probes nothing but CDP');
+  });
+
+  it('brings TradingView back when CDP is down and says so in one event', async () => {
+    let cdp = false;
+    const sent = [];
+    const out = await runWatch({
+      checks: { tradingview: () => checkTradingView({ up: async (url) => url.includes(':9222/') && cdp, tvUp: async () => { cdp = true; return { code: 0 }; }, sleep: async () => {} }) },
+      prev: { tradingview: 'ok' }, relay: async (t) => sent.push(t), heartbeat: async () => {},
+    });
+    assert.equal(out.state.tradingview, 'ok');
+    assert.equal(out.events.length, 1);
+    assert.match(out.events[0], /CDP/);
+    assert.doesNotMatch(out.events[0], /MCP server/);
+    assert.equal(sent.length, 1);
+  });
+
+  it('runs tv_up as a CDP-only bring-up that needs no API key and never kills a running TradingView', async () => {
+    const [script, ...argv] = TV_UP_ARGS;
+    assert.equal(script, 'scripts/tv_up.js');
+    const fake = (tvRunning) => {
+      const calls = [];
+      const deps = {
+        log: () => {},
+        probeCdp: async () => null,
+        isTvRunning: async () => tvRunning,
+        launch: async (opts) => { calls.push(`launch ${JSON.stringify(opts)}`); return { success: true }; },
+        httpRequest: async (url) => { calls.push(`http ${url}`); return null; },
+        spawnHttpServer: () => { calls.push('spawnHttpServer'); },
+        tailscale: async (args) => { calls.push(`tailscale ${args.join(' ')}`); return '{}'; },
+        delay: async () => {},
+      };
+      return { calls, deps };
+    };
+    // TradingView runs without CDP: tv_up refuses and launches nothing, since launching would kill it.
+    const running = fake(true);
+    assert.equal(await tvUp({ env: {}, argv, _deps: running.deps }), 1);
+    assert.deepEqual(running.calls, []);
+    // No TradingView: tv_up launches one with kill_existing false and starts no HTTP server or Funnel.
+    const stopped = fake(false);
+    assert.equal(await tvUp({ env: {}, argv, _deps: stopped.deps }), 0);
+    assert.deepEqual(stopped.calls, ['launch {"port":9222,"kill_existing":false}']);
   });
 });
 
@@ -156,5 +223,59 @@ describe('runWatch', () => {
     });
     assert.deepEqual(r.state, { tradingview: 'ok', tester: 'error', device: 'ok' });
     assert.match(r.events[0], /tester check failed: boom/);
+  });
+});
+
+// ELI-851 items 2 and 3: settings parsing, the repo default and the tester interval.
+describe('ELI-851: watchdog settings', () => {
+  const collect = () => { const lines = []; return { lines, warn: (m) => lines.push(m) }; };
+
+  it('falls back to the default and logs one warning for a threshold that is not a number', () => {
+    for (const [name, key, def] of [['DESK_WATCH_STALE_MIN', 'staleMin', 35], ['DESK_WATCH_DISK_MIN_GB', 'diskMinGb', 10], ['DESK_WATCH_MEM_MAX_PCT', 'memMaxPct', 90]]) {
+      const { lines, warn } = collect();
+      const s = readSettings({ [name]: '3O' }, warn);
+      assert.equal(s[key], def, name);
+      assert.equal(lines.length, 1, `${name}: ${lines.join(' | ')}`);
+      assert.match(lines[0], new RegExp(name));
+      assert.match(lines[0], /3O/);
+    }
+  });
+
+  // Review finding: a small negative value passed the old range check with no warning.
+  it('keeps the default and warns for a negative threshold', () => {
+    for (const name of ['DESK_WATCH_DISK_MIN_GB', 'DESK_WATCH_MEM_MAX_PCT', 'DESK_WATCH_STALE_MIN']) {
+      const { lines, warn } = collect();
+      const s = readSettings({ [name]: '-0.5' }, warn);
+      assert.deepEqual([s.diskMinGb, s.memMaxPct, s.staleMin], [10, 90, 35], name);
+      assert.equal(lines.length, 1, name);
+    }
+    assert.equal(readSettings({ DESK_WATCH_DISK_MIN_GB: '0' }, () => { throw new Error('0 is valid'); }).diskMinGb, 0);
+  });
+
+  it('takes valid numbers and stays quiet', () => {
+    const { lines, warn } = collect();
+    const s = readSettings({ DESK_WATCH_STALE_MIN: '50', DESK_WATCH_DISK_MIN_GB: '2.5', DESK_WATCH_MEM_MAX_PCT: '95' }, warn);
+    assert.deepEqual([s.staleMin, s.diskMinGb, s.memMaxPct], [50, 2.5, 95]);
+    assert.deepEqual(lines, []);
+  });
+
+  it('defaults mcpRepo to this repo root', () => {
+    assert.equal(readSettings({}, () => {}).mcpRepo, REPO_ROOT);
+    assert.equal(readSettings({ DESK_WATCH_MCP_REPO: 'elsewhere' }, () => {}).mcpRepo, 'elsewhere');
+  });
+
+  it('has no home path in the watchdog source', () => {
+    const src = readFileSync(join(REPO_ROOT, 'scripts', 'watchdog', 'desk_watch.js'), 'utf8');
+    assert.doesNotMatch(src, /[A-Za-z]:\\{1,2}Users\\|\/home\/|\/Users\//);
+  });
+
+  it('restarts the tester with the interval from one setting, default 15', () => {
+    const at = (args) => args[args.indexOf('--every') + 1];
+    assert.equal(readSettings({}, () => {}).testerEvery, 15);
+    assert.equal(at(testerArgs(readSettings({}, () => {}))), '15');
+    assert.equal(at(testerArgs(readSettings({ DESK_WATCH_TESTER_EVERY: '10' }, () => {}))), '10');
+    const { lines, warn } = collect();
+    assert.equal(readSettings({ DESK_WATCH_TESTER_EVERY: '0' }, warn).testerEvery, 15, 'run.js refuses --every 0');
+    assert.equal(lines.length, 1);
   });
 });

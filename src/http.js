@@ -13,10 +13,10 @@
  * TV_MCP_IDLE_MINUTES (default 15; the process exits after this long with no
  * authenticated /mcp requests).
  *
- * Because the port can be public, HTTP mode does not register the tools in
- * HTTP_BLOCKED_TOOLS (src/create_server.js). When main() stops, on idle
- * shutdown or SIGINT/SIGTERM/SIGHUP/SIGBREAK, it turns off the :8443 Funnel
- * if that Funnel points at this server's port. A hard kill (taskkill /F,
+ * Because the port can be public, HTTP mode registers only the read and
+ * drawing tools in HTTP_ALLOWED_TOOLS (src/create_server.js). When main()
+ * stops, on idle shutdown or SIGINT/SIGTERM/SIGHUP/SIGBREAK, it turns off the
+ * :8443 Funnel if that Funnel points at this server's port. A hard kill (taskkill /F,
  * SIGKILL) skips that; run `tailscale funnel --https=8443 off` by hand then.
  */
 import http from 'node:http';
@@ -25,7 +25,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { createServer as buildServer } from './create_server.js';
 import { closeOwnFunnel, tailscaleSync as defaultTailscaleSync } from './funnel.js';
 
-// HTTP mode leaves out the stdio-only tools (see HTTP_BLOCKED_TOOLS).
+// HTTP mode registers only HTTP_ALLOWED_TOOLS (src/create_server.js).
 const defaultCreateServer = () => buildServer({ http: true });
 const SHUTDOWN_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK'];
 

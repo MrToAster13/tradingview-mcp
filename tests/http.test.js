@@ -15,7 +15,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { startHttpServer, readHttpConfig, main } from '../src/http.js';
-import { createServer } from '../src/create_server.js';
+import { createServer, HTTP_ALLOWED_TOOLS, STDIO_ONLY_TOOLS } from '../src/create_server.js';
 import { tailscaleSync } from '../src/funnel.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -184,7 +184,10 @@ const HTTP_BLOCKED = ['ui_evaluate', 'tv_update', 'tv_launch', 'ui_type_text', '
 describe('http mode — tools/list versus stdio', () => {
   let s;
   let httpTools;
+  let httpInstructions;
   let stdioTools;
+  let stdioInstructions;
+  let stdioOnlyCalls;
   before(async () => {
     s = await startTestServer();
     const httpClient = new Client({ name: 'http-test', version: '0' });
@@ -192,6 +195,14 @@ describe('http mode — tools/list versus stdio', () => {
       requestInit: { headers: { Authorization: `Bearer ${KEY}` } },
     }));
     httpTools = (await httpClient.listTools()).tools.map((t) => t.name).sort();
+    httpInstructions = httpClient.getInstructions();
+    // ELI-849: a stdio-only tool must not run over HTTP even when called by
+    // name. The arguments fail the tools' own schemas on purpose, so neither
+    // handler can run, even on a build that still registers the tool.
+    stdioOnlyCalls = {
+      ui_click: await httpClient.callTool({ name: 'ui_click', arguments: { by: 'invalid-on-purpose', value: 'x' } }),
+      watchlist_remove: await httpClient.callTool({ name: 'watchlist_remove', arguments: { symbols: 'not-an-array' } }),
+    };
     await httpClient.close();
 
     const stdioClient = new Client({ name: 'stdio-test', version: '0' });
@@ -199,6 +210,7 @@ describe('http mode — tools/list versus stdio', () => {
       command: process.execPath, args: [SERVER_JS], cwd: ROOT, stderr: 'ignore',
     }));
     stdioTools = (await stdioClient.listTools()).tools.map((t) => t.name).sort();
+    stdioInstructions = stdioClient.getInstructions();
     await stdioClient.close();
   });
   after(async () => { await s.handle.close(); });
@@ -211,9 +223,27 @@ describe('http mode — tools/list versus stdio', () => {
     for (const name of HTTP_BLOCKED) assert.ok(stdioTools.includes(name), `${name} missing from stdio`);
   });
 
-  it('HTTP mode registers every other stdio tool', () => {
-    assert.ok(stdioTools.length > HTTP_BLOCKED.length);
-    assert.deepEqual(httpTools, stdioTools.filter((n) => !HTTP_BLOCKED.includes(n)));
+  // ELI-849: an allow list replaced the ELI-756 deny list.
+  it('HTTP mode registers exactly HTTP_ALLOWED_TOOLS', () => {
+    assert.deepEqual(httpTools, Object.keys(HTTP_ALLOWED_TOOLS).sort());
+  });
+
+  it('stdio mode registers every allowed and every stdio-only tool', () => {
+    assert.deepEqual(stdioTools, [...Object.keys(HTTP_ALLOWED_TOOLS), ...Object.keys(STDIO_ONLY_TOOLS)].sort());
+  });
+
+  for (const name of ['ui_click', 'watchlist_remove']) {
+    it(`calling stdio-only ${name} over HTTP fails with "not found" and runs nothing`, () => {
+      const res = stdioOnlyCalls[name];
+      assert.equal(res.isError, true);
+      assert.match(res.content[0].text, new RegExp(`Tool ${name} not found`));
+    });
+  }
+
+  it('HTTP instructions say that tools missing from tools/list are stdio-only; stdio instructions do not', () => {
+    assert.match(httpInstructions, /HTTP MODE/);
+    assert.match(httpInstructions, /stdio-only/);
+    assert.doesNotMatch(stdioInstructions, /HTTP MODE/);
   });
 
   it('createServer() builds a fresh server each call', () => {
