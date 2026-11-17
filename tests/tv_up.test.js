@@ -295,6 +295,44 @@ describe('tv_up — step 5: public URL', () => {
   });
 });
 
+// ELI-848: --no-http brings up TradingView with CDP only, for the desk watchdog.
+describe('tv_up --no-http', () => {
+  it('needs no API key and runs no HTTP, Funnel or tailscale step', async () => {
+    const { s, deps } = world({ cdpUp: true });
+    assert.equal(await run(deps, { env: { PATH: '/bin' }, argv: ['--no-http'] }), 0);
+    assert.ok(!s.calls.some((c) => c.startsWith('http:') && !c.endsWith('/json/version')), 'no HTTP server probe');
+    assert.ok(!s.calls.includes('spawnHttpServer'));
+    assert.ok(!s.calls.some((c) => c.startsWith('tailscale')));
+    assert.match(out(s), /1\/5 api key: skipped \(--no-http\)/);
+    assert.match(out(s), /2\/5 cdp: TradingView already answering/);
+    assert.match(out(s), /3\/5 http: skipped \(--no-http\)/);
+  });
+
+  it('ignores a bad TV_MCP_HTTP_PORT, since it starts no HTTP server', async () => {
+    const { deps } = world({ cdpUp: true });
+    assert.equal(await run(deps, { env: { TV_MCP_HTTP_PORT: 'x' }, argv: ['--no-http'] }), 0);
+  });
+
+  it('launches with kill_existing false when no TradingView runs', async () => {
+    const { s, deps } = world();
+    assert.equal(await run(deps, { env: {}, argv: ['--no-http'] }), 0);
+    assert.deepEqual(mutating(s), ['launch:{"port":9222,"kill_existing":false}']);
+  });
+
+  it('refuses, and launches nothing, when TradingView runs without CDP', async () => {
+    const { s, deps } = world({ tvRunning: true });
+    assert.equal(await run(deps, { env: {}, argv: ['--no-http'] }), 1);
+    assert.deepEqual(mutating(s), []);
+    assert.match(out(s), /2\/5 cdp: FAILED\. TradingView is running without CDP/);
+  });
+
+  it('accepts --no-funnel next to it', async () => {
+    const { s, deps } = world({ cdpUp: true });
+    assert.equal(await run(deps, { env: {}, argv: ['--no-http', '--no-funnel'] }), 0);
+    assert.deepEqual(mutating(s), []);
+  });
+});
+
 describe('parseFunnel8443()', () => {
   it('reads the live JSON shape (443 only) as no mapping', () => {
     assert.deepEqual(parseFunnel8443(PROXY_443, 8765), { state: 'absent' });

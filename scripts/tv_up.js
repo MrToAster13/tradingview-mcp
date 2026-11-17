@@ -15,9 +15,13 @@
  * on a healthy stack changes nothing. The existing :443 serve mapping is
  * never read for writing or modified.
  *
- * Usage: node scripts/tv_up.js [--no-funnel]
- * Env:   TV_MCP_API_KEY (required), TV_MCP_HTTP_PORT (default 8765),
- *        TV_CDP_PORT / CDP_PORT (default 9222)
+ * --no-http runs step 2 only: TradingView with CDP, no API key, no HTTP
+ * server and no Funnel. The desk watchdog uses it (ELI-848), so the HTTP
+ * server's idle shutdown keeps the Funnel closed.
+ *
+ * Usage: node scripts/tv_up.js [--no-funnel | --no-http]
+ * Env:   TV_MCP_API_KEY (required unless --no-http), TV_MCP_HTTP_PORT
+ *        (default 8765), TV_CDP_PORT / CDP_PORT (default 9222)
  */
 import http from 'node:http';
 import { spawn, execFile } from 'node:child_process';
@@ -133,25 +137,31 @@ export async function tvUp({ env = process.env, argv = [], _deps } = {}) {
   const log = deps.log;
   let step = '1/5 api key';
 
-  const unknown = argv.filter((a) => a !== '--no-funnel');
+  const unknown = argv.filter((a) => a !== '--no-funnel' && a !== '--no-http');
   if (unknown.length) {
-    log(`unknown argument(s): ${unknown.join(' ')}. Usage: node scripts/tv_up.js [--no-funnel]`);
+    log(`unknown argument(s): ${unknown.join(' ')}. Usage: node scripts/tv_up.js [--no-funnel | --no-http]`);
     return 1;
   }
   const noFunnel = argv.includes('--no-funnel');
+  const noHttp = argv.includes('--no-http');
 
   try {
-    // 1. API key
+    // 1. API key. Only the HTTP server uses it.
     const apiKey = env.TV_MCP_API_KEY;
-    try {
-      validateApiKey(apiKey);
-    } catch (err) {
-      log(`${step}: FAILED. ${err.message}`);
-      for (const line of KEY_HELP) log(`    ${line}`);
-      return 1;
+    let port;
+    if (noHttp) {
+      log(`${step}: skipped (--no-http)`);
+    } else {
+      try {
+        validateApiKey(apiKey);
+      } catch (err) {
+        log(`${step}: FAILED. ${err.message}`);
+        for (const line of KEY_HELP) log(`    ${line}`);
+        return 1;
+      }
+      port = readPort(env);
+      log(`${step}: ok`);
     }
-    const port = readPort(env);
-    log(`${step}: ok`);
 
     // 2. TradingView with CDP
     step = '2/5 cdp';
@@ -175,6 +185,10 @@ export async function tvUp({ env = process.env, argv = [], _deps } = {}) {
 
     // 3. HTTP MCP server
     step = '3/5 http';
+    if (noHttp) {
+      log(`${step}: skipped (--no-http), so the Funnel and URL steps do not run`);
+      return 0;
+    }
     if (await healthOk(deps, port)) {
       // Something already serves /health. Make sure it accepts *this* key, or the
       // public URL would point at a server the caller cannot use.
