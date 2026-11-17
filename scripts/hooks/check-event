@@ -1,0 +1,29 @@
+#!/bin/sh
+# CI entry for the no-push-marker job (ELI-694). Works out which commits a
+# GitHub event added and runs check-no-push over them.
+# Usage: scripts/hooks/check-event pull_request <base sha> <head sha>
+#        scripts/hooks/check-event push <before sha> <after sha>
+# A push checks before..after. An all-zero before (the push created the
+# branch) or a before missing from the clone (a force-push) checks every
+# commit reachable from the new tip instead, so the check never runs on a
+# range it could not bound.
+# A push skips merge commits (--no-merges). GitHub writes the PR title into
+# its merge commit, and a title that names this guard would otherwise fail
+# main for good (review finding TVMCP-R5). The commits a merge brings in are
+# still checked, and the pull_request run already checked them.
+[ "$#" -eq 3 ] || { echo "usage: $0 pull_request|push <from sha> <to sha>" >&2; exit 2; }
+hooks_dir=$(dirname "$0")
+event=$1 from=$2 to=$3
+[ -n "$to" ] || { echo "check-event: empty tip sha" >&2; exit 2; }
+case "$event" in
+  pull_request) exec "$hooks_dir/check-no-push" "$from..$to" ;;
+  push)
+    case "$from" in
+      *[!0]*) if git cat-file -e "$from^{commit}" 2>/dev/null; then
+                exec "$hooks_dir/check-no-push" --no-merges "$from..$to"
+              fi
+              echo "check-event: $from is not in this clone, checking every commit reachable from $to" >&2 ;;
+    esac
+    exec "$hooks_dir/check-no-push" --no-merges "$to" ;;
+  *) echo "check-event: unknown event: $event" >&2; exit 2 ;;
+esac

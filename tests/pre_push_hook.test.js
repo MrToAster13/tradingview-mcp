@@ -90,9 +90,140 @@ describe('pre-push hook', { skip: !hasGit || onWindows }, () => {
 });
 
 describe('CI guard', () => {
+  const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8').replace(/\r\n/g, '\n');
+  const job = ci.slice(ci.indexOf('\n  no-push-marker:'));
+
   it('ci.yml checks pull request commits for a do-not-push marker', () => {
-    const ci = readFileSync(join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
-    assert.match(ci, /scripts\/hooks\/check-no-push/);
+    assert.match(job, /scripts\/hooks\/check-event/);
+    assert.match(job, /github\.event\.pull_request\.base\.sha/);
+    assert.match(job, /github\.event\.pull_request\.head\.sha/);
+  });
+
+  // ELI-694 follow-up: the job ran only on pull requests, so a direct push to
+  // main skipped it.
+  it('ci.yml also checks the commits of a push to main, from github.event.before to github.sha', () => {
+    assert.match(ci, /^on:\n {2}push:\n {4}branches: \[main\]/m);
+    assert.doesNotMatch(job, /^ {4}if:/m, 'the no-push-marker job is limited by an if: condition');
+    assert.match(job, /github\.event\.before/);
+    assert.match(job, /github\.sha/);
+  });
+});
+
+// ELI-694 follow-up: CI picks the range per event. A push checks
+// before..after. An all-zero before (the push created the branch) or a before
+// missing from the clone (a force-push) checks every commit reachable from the
+// new tip, so the check never passes a range it could not bound.
+describe('check-event picks the commits a GitHub event added', { skip: !hasGit || onWindows }, () => {
+  const CHECK_EVENT = join(HOOKS_DIR, 'check-event');
+  const ZERO = '0'.repeat(40);
+  const MISSING = 'deadbeef'.repeat(5);
+  let dir; let base; let marked; let tip;
+  const sha = () => git(dir, 'rev-parse', 'HEAD').out.trim();
+  const run = (...args) => spawnSync(CHECK_EVENT, args, { cwd: dir, encoding: 'utf8' });
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'tvmcp-event-'));
+    git(dir, 'init', '-q', '-b', 'main');
+    commit(dir, 'Base'); base = sha();
+    commit(dir, 'Private paths, do not push'); marked = sha();
+    commit(dir, 'Clean change'); tip = sha();
+  });
+  after(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('is tracked as executable', () => {
+    assert.ok(statSync(CHECK_EVENT).mode & 0o111, 'check-event is not executable');
+  });
+
+  it('push: passes when every new commit is clean', () => {
+    const r = run('push', marked, tip);
+    assert.equal(r.status, 0, r.stderr);
+  });
+
+  it('push: fails when a new commit is marked', () => {
+    const r = run('push', base, tip);
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /do not push/i);
+  });
+
+  it('push with an all-zero before: checks every commit reachable from the new tip', () => {
+    assert.equal(run('push', ZERO, tip).status, 1);
+    const r = run('push', ZERO, base);
+    assert.equal(r.status, 0, r.stderr);
+  });
+
+  it('push with a before sha missing from the clone: checks every commit reachable from the new tip', () => {
+    assert.equal(run('push', MISSING, tip).status, 1);
+    const r = run('push', MISSING, base);
+    assert.equal(r.status, 0, r.stderr);
+  });
+
+  it('pull_request: checks base..head', () => {
+    assert.equal(run('pull_request', base, tip).status, 1);
+    const r = run('pull_request', marked, tip);
+    assert.equal(r.status, 0, r.stderr);
+  });
+
+  it('fails closed on a pull request range it cannot resolve', () => {
+    const r = run('pull_request', MISSING, tip);
+    assert.equal(r.status, 2, r.stderr);
+  });
+
+  it('fails closed on an unknown event or a missing argument', () => {
+    assert.equal(run('workflow_dispatch', base, tip).status, 2);
+    assert.equal(run('push', base).status, 2);
+    assert.equal(run('push', base, '').status, 2);
+  });
+});
+
+// Review finding TVMCP-R5: GitHub's merge commit carries the PR title in its
+// body. A title that names the guard ("the do-not-push hook") passed the pull
+// request run, which checks only the branch commits, then failed the push run
+// on main, and every later fallback scan of main failed on that merge commit.
+describe('check-event on a push that adds a merge commit', { skip: !hasGit || onWindows }, () => {
+  const CHECK_EVENT = join(HOOKS_DIR, 'check-event');
+  const ZERO = '0'.repeat(40);
+  const MISSING = 'deadbeef'.repeat(5);
+  let dir; let base; let merge; let badMerge;
+  const sha = () => git(dir, 'rev-parse', 'HEAD').out.trim();
+  const run = (...args) => spawnSync(CHECK_EVENT, args, { cwd: dir, encoding: 'utf8' });
+  const commitFile = (file, message) => {
+    writeFileSync(join(dir, file), `${Math.random()}\n`);
+    git(dir, 'add', file);
+    assert.equal(git(dir, 'commit', '-q', '-m', message).status, 0);
+  };
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'tvmcp-merge-'));
+    git(dir, 'init', '-q', '-b', 'main');
+    commitFile('a.txt', 'Base'); base = sha();
+    git(dir, 'checkout', '-q', '-b', 'feature');
+    commitFile('b.txt', 'Install the pre-push hook on npm install');
+    git(dir, 'checkout', '-q', 'main');
+    assert.equal(git(dir, 'merge', '-q', '--no-ff', 'feature', '-m',
+      'Merge pull request #1 from feature', '-m', 'ci(hooks): install the do-not-push hook on npm install').status, 0);
+    merge = sha();
+    git(dir, 'checkout', '-q', '-b', 'private', base);
+    commitFile('c.txt', 'Private paths, do not push');
+    git(dir, 'checkout', '-q', 'main');
+    assert.equal(git(dir, 'merge', '-q', '--no-ff', 'private', '-m', 'Merge pull request #2 from private').status, 0);
+    badMerge = sha();
+  });
+  after(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('passes when only the merge commit message names the marker', () => {
+    const r = run('push', base, merge);
+    assert.equal(r.status, 0, r.stderr);
+  });
+
+  it('passes a later full-history scan of that main', () => {
+    for (const from of [ZERO, MISSING, '']) {
+      const r = run('push', from, merge);
+      assert.equal(r.status, 0, `before=${from || '(empty)'}: ${r.stderr}`);
+    }
+  });
+
+  it('still fails when the merge brings in a marked commit', () => {
+    const r = run('push', merge, badMerge);
+    assert.equal(r.status, 1, r.stderr);
+    assert.match(r.stderr, /do not push/i);
   });
 });
 

@@ -37,15 +37,14 @@ If you're unsure whether a feature fits, open an issue to discuss before submitt
 ## Development
 
 ```bash
-npm install
-git config core.hooksPath scripts/hooks  # once per clone: refuse pushes of commits marked "do not push"
+npm install       # also points core.hooksPath at scripts/hooks, see below
 npm run lint      # eslint — the no-undef guard catches unfinished refactors
 npm test          # every offline test file (no TradingView needed)
 npm run test:e2e  # requires TradingView running with CDP on port 9222
 tv status         # verify CDP connection (TradingView must be running)
 ```
 
-A commit message that says "do not push" (or "don't push", "do-not-push") keeps that commit local. The pre-push hook in `scripts/hooks` refuses the push, and CI fails a pull request that carries one. Put private paths and ids in an untracked file instead of relying on the message.
+A commit message that says "do not push" (or "don't push", "do-not-push") keeps that commit local. `npm install` and `npm ci` run the `prepare` script, `scripts/install_hooks.js`, which sets `core.hooksPath` to `scripts/hooks`. The pre-push hook there refuses the push. The script changes nothing outside a git work tree, and it leaves your config alone when `core.hooksPath` already points elsewhere or `.git/hooks` holds active hooks. In those two cases it prints a warning, and you install the hook by hand with `git config core.hooksPath scripts/hooks`. `npm ci --ignore-scripts` skips it. CI fails a pull request or a push to main that carries a marked commit. Put private paths and ids in an untracked file instead of relying on the message.
 
 Core functions take an optional `_deps` parameter resolved via `_resolve(_deps)` so they're unit-testable — see `src/core/replay.js` or `src/core/health.js` for the pattern.
 

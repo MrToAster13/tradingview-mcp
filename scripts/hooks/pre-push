@@ -1,6 +1,7 @@
 #!/bin/sh
 # Refuse to push a commit whose message says not to push it (ELI-694).
-# Install once per clone: git config core.hooksPath scripts/hooks
+# npm install and npm ci install it through the prepare script, which runs
+# scripts/install_hooks.js. By hand: git config core.hooksPath scripts/hooks
 remote="$1"
 hooks_dir=$(dirname "$0")
 status=0
