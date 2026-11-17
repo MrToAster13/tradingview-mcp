@@ -112,7 +112,7 @@ None of these paths kills a running TradingView by default. Each one first check
 **Easiest: use the MCP tool** (auto-detects your install):
 > "Use tv_launch to start TradingView in debug mode"
 
-**For the remote HTTP stack** (HTTP server plus Tailscale Funnel), run `node scripts/tv_up.js`. It launches TradingView only when none is running.
+**For the remote HTTP stack** (HTTP server plus Tailscale Funnel), run `node scripts/tv_up.js`. It launches TradingView only when none is running. `node scripts/tv_up.js --no-http` brings up TradingView with CDP only, with no API key, HTTP server or Funnel. The desk watchdog uses it ([docs/desk-watchdog.md](docs/desk-watchdog.md)).
 
 **Mac:**
 ```bash
