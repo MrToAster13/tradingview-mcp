@@ -68,3 +68,24 @@ describe('lint scope', () => {
     for (const dir of ['src/', 'scripts/', 'tests/']) assert.ok(lint.includes(dir), `lint skips ${dir}`);
   });
 });
+
+// Review finding (ELI-852): the handoff 002 gotcha named only test:all and
+// test:e2e as live-chart scripts, but test:count also runs tests/e2e.test.js.
+describe('handoff 002 names every npm script that runs the live e2e suite', () => {
+  const handoff = read('docs/handoffs/002-tv-up-no-kill-and-open-questions.md');
+  const scripts = JSON.parse(read('package.json')).scripts;
+  const live = Object.keys(scripts).filter((k) => scripts[k].includes('e2e.test.js'));
+
+  it('finds at least the known live scripts', () => {
+    for (const k of ['test:all', 'test:e2e', 'test:count']) assert.ok(live.includes(k), `${k} no longer runs e2e`);
+  });
+
+  for (const k of live) {
+    it(`the status line and the Gotchas line both name ${k}`, () => {
+      const status = handoff.split(/\r?\n/).find((l) => l.startsWith('Status update'));
+      const gotcha = handoff.split(/\r?\n/).find((l) => l.includes('wipe the live chart'));
+      assert.ok(status?.includes(`\`${k}\``), `status line misses ${k}`);
+      assert.ok(gotcha?.includes(k), `Gotchas line misses ${k}`);
+    });
+  }
+});

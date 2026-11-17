@@ -2,7 +2,7 @@
 
 Status: blocked (all code work that doesn't need Elijah has landed; the open questions wait on Elijah)
 
-Status update 2026-11-16 (ELI-852): three items below are out of date. `npm test` now runs the same offline runner as `npm run test:unit` (`scripts/run_offline_tests.js`), so it is safe with TradingView open; only `test:all` and `test:e2e` touch the live chart. The `tests/sanitization.test.js` `C:\C:\` path bug is fixed (d80ebf7). The launch_tv_debug scripts no longer kill by name unless `KILL_EXISTING=1` is set (587aa27, ELI-696). The Gotchas line is corrected below; the other two are marked in place.
+Status update 2026-11-16 (ELI-852): three items below are out of date. `npm test` now runs the same offline runner as `npm run test:unit` (`scripts/run_offline_tests.js`), so it is safe with TradingView open; only `test:all`, `test:e2e` and `test:count` touch the live chart, because each runs `tests/e2e.test.js`. The `tests/sanitization.test.js` `C:\C:\` path bug is fixed (d80ebf7). The launch_tv_debug scripts no longer kill by name unless `KILL_EXISTING=1` is set (587aa27, ELI-696). The Gotchas line is corrected below; the other two are marked in place.
 
 ## Goal
 Elijah asked to work every ticket and task that could be done without him, using subagents, and to commit the uncommitted work. The pieces were Caddy after reboot, whether Tailscale Funnel is on, why the 10-19 and 10-20 forward check-ins produced nothing, and landing the feat/draw-trades-from-csv work. Elijah lifted the one-subagent cap on resume, so normal CLAUDE.md subagent use applies.
@@ -51,7 +51,7 @@ Elijah asked to work every ticket and task that could be done without him, using
 - `%TEMP%\mc_fwd\snap_20261020_2026.txt` is the failed rerun log.
 
 ## Gotchas
-- Never run `npm run test:all` or `npm run test:e2e` while TradingView is open, because they wipe the live chart. `npm test` and `npm run test:unit` run the same offline suite and are safe.
+- Never run `npm run test:all`, `npm run test:e2e` or `npm run test:count` while TradingView is open, because they wipe the live chart. `npm test` and `npm run test:unit` run the same offline suite and are safe.
 - Never run `scripts\launch_tv_debug.bat` and never kill TradingView.
 - Follow-ups not fixed yet. Each needs Elijah or the live app to verify, so I left them:
   - Nobody has verified that exports fill in Level ID. That needs a real export.
