@@ -29,6 +29,17 @@ export function redactRemote(url) {
   return String(url || '').replace(/^([a-z][a-z0-9+.-]*:\/\/)[^@/]*@/i, '$1***@');
 }
 
+/**
+ * One line for a failed git call: the first line of its stderr, else of its message, with any
+ * user or token part of a URL replaced. execSync's message starts "Command failed: <cmd>", which
+ * says less than stderr.
+ */
+export function gitErrorLine(err) {
+  const text = String(err?.stderr || '').trim() || String(err?.message || err || '');
+  const line = text.split(/\r?\n/).map((l) => l.trim()).find(Boolean) || 'unknown error';
+  return line.replace(/([a-z][a-z0-9+.-]*:\/\/)[^@/\s]*@/gi, '$1***@');
+}
+
 function _resolve(deps) {
   return {
     execSync: deps?.execSync || _execSync,
@@ -76,7 +87,16 @@ export async function update({ _deps } = {}) {
     };
   }
 
-  const dirty = git('status --porcelain');
+  // Past the guards above, a failed git call returns one line instead of throwing raw git
+  // output into the tool result (ELI-851).
+  const failed = (what, err) => ({ success: false, error: `${what} failed: ${gitErrorLine(err)}` });
+
+  let dirty;
+  try {
+    dirty = git('status --porcelain');
+  } catch (err) {
+    return failed('git status', err);
+  }
   if (dirty) {
     return {
       success: false,
@@ -85,18 +105,37 @@ export async function update({ _deps } = {}) {
     };
   }
 
-  const before = git('rev-parse HEAD');
+  let before;
+  try {
+    before = git('rev-parse HEAD');
+  } catch (err) {
+    return failed('git rev-parse HEAD', err);
+  }
   try {
     git('fetch origin main', 30000);
   } catch (err) {
     return { success: false, error: `git fetch failed (offline? no origin?): ${err.message}` };
   }
-  const remote = git('rev-parse origin/main');
+  let remote;
+  try {
+    remote = git('rev-parse origin/main');
+  } catch (err) {
+    return failed('git rev-parse origin/main', err);
+  }
   if (before === remote) {
     return { success: true, updated: false, status: 'up_to_date', commit: before.slice(0, 8) };
   }
 
-  const ahead = Number(git('rev-list --count origin/main..HEAD'));
+  let ahead;
+  let behind;
+  let lockChanged;
+  try {
+    ahead = Number(git('rev-list --count origin/main..HEAD'));
+    behind = Number(git('rev-list --count HEAD..origin/main'));
+    lockChanged = git('diff --name-only HEAD origin/main -- package-lock.json') !== '';
+  } catch (err) {
+    return failed('Comparing with origin/main', err);
+  }
   if (ahead > 0) {
     return {
       success: false,
@@ -104,11 +143,13 @@ export async function update({ _deps } = {}) {
     };
   }
 
-  const behind = Number(git('rev-list --count HEAD..origin/main'));
-  const lockChanged = git('diff --name-only HEAD origin/main -- package-lock.json') !== '';
-
-  git('merge --ff-only origin/main', 30000);
-  const after = git('rev-parse HEAD');
+  try {
+    git('merge --ff-only origin/main', 30000);
+  } catch (err) {
+    return failed('git merge --ff-only origin/main', err);
+  }
+  let after = remote; // a fast-forward to origin/main lands on it
+  try { after = git('rev-parse HEAD'); } catch { /* keep remote */ }
 
   let depsInstalled = false;
   let depsWarning;

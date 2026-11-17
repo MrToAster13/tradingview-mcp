@@ -28,7 +28,9 @@ Messages go to Telegram through the Mac mini's root `hermes send`, only when a c
 
 ## Settings
 
-Environment variables, all optional: `DESK_WATCH_TESTER_REPO` (where `scripts/combo/run.js` runs), `DESK_WATCH_TESTER_OUT` (the tester's `--out`, default `combo-data`), `DESK_WATCH_TESTER_CONFIG` (default `scripts/combo/signals.example.json`), `DESK_WATCH_MCP_REPO` (where `tv_up.js --no-http` runs), `DESK_WATCH_STALE_MIN`, `DESK_WATCH_DISK_MIN_GB`, `DESK_WATCH_MEM_MAX_PCT`, `DESK_WATCH_STATE`, and `DESK_WATCH_RELAY=0` to skip Telegram and the heartbeat. The wrapper sets the tester repo and output folder.
+Environment variables, all optional: `DESK_WATCH_TESTER_REPO` (where `scripts/combo/run.js` runs), `DESK_WATCH_TESTER_OUT` (the tester's `--out`, default `combo-data`), `DESK_WATCH_TESTER_CONFIG` (default `scripts/combo/signals.example.json`), `DESK_WATCH_TESTER_EVERY` (the restarted tester's `--every` in minutes, default 15), `DESK_WATCH_MCP_REPO` (where `tv_up.js --no-http` runs), `DESK_WATCH_STALE_MIN`, `DESK_WATCH_DISK_MIN_GB`, `DESK_WATCH_MEM_MAX_PCT`, `DESK_WATCH_STATE`, and `DESK_WATCH_RELAY=0` to skip Telegram and the heartbeat. The wrapper sets the tester repo and output folder. Both repo settings default to the repo that holds `desk_watch.js`.
+
+A number setting that does not parse, or is out of range, keeps its default and logs one warning per run. Keep `DESK_WATCH_STALE_MIN` above `DESK_WATCH_TESTER_EVERY` plus the time one cycle takes, or a healthy tester shows as stale. The defaults, 35 and 15, also let one cycle fail before an alert.
 
 ## Limits
 

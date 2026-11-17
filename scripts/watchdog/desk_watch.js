@@ -145,18 +145,35 @@ export async function runWatch({ checks, prev, relay, heartbeat }) {
 
 // ---- real probes and actions ----
 
-const env = process.env;
-const SETTINGS = {
-  state: env.DESK_WATCH_STATE || join(env.LOCALAPPDATA || '.', 'hermes', 'scripts', 'desk_watch.state.json'),
-  mcpRepo: env.DESK_WATCH_MCP_REPO || 'C:\\Users\\Elijah\\tradingview-mcp',
-  testerRepo: env.DESK_WATCH_TESTER_REPO || REPO,
-  testerConfig: env.DESK_WATCH_TESTER_CONFIG || 'scripts/combo/signals.example.json',
-  testerOut: env.DESK_WATCH_TESTER_OUT || 'combo-data',
-  staleMin: Number(env.DESK_WATCH_STALE_MIN || 35),
-  diskMinGb: Number(env.DESK_WATCH_DISK_MIN_GB || 10),
-  memMaxPct: Number(env.DESK_WATCH_MEM_MAX_PCT || 90),
-  relay: env.DESK_WATCH_RELAY !== '0',
-};
+// Settings from the environment. A number setting that does not parse keeps its default and logs
+// one warning, so a typo cannot turn a check off: with NaN every comparison is false.
+export function readSettings(env = process.env, warn = (line) => console.log(line)) {
+  const num = (name, fallback, { positive = false } = {}) => {
+    const raw = env[name];
+    if (raw === undefined || String(raw).trim() === '') return fallback;
+    const n = Number(raw);
+    if (Number.isFinite(n) && (positive ? n > 0 : n >= 0)) return n;
+    warn(`Desktop watchdog: ${name} is "${raw}", not a number ${positive ? 'above 0' : 'of 0 or more'}; using ${fallback}.`);
+    return fallback;
+  };
+  return {
+    state: env.DESK_WATCH_STATE || join(env.LOCALAPPDATA || '.', 'hermes', 'scripts', 'desk_watch.state.json'),
+    mcpRepo: env.DESK_WATCH_MCP_REPO || REPO,
+    testerRepo: env.DESK_WATCH_TESTER_REPO || REPO,
+    testerConfig: env.DESK_WATCH_TESTER_CONFIG || 'scripts/combo/signals.example.json',
+    testerOut: env.DESK_WATCH_TESTER_OUT || 'combo-data',
+    testerEvery: num('DESK_WATCH_TESTER_EVERY', 15, { positive: true }),
+    staleMin: num('DESK_WATCH_STALE_MIN', 35, { positive: true }),
+    diskMinGb: num('DESK_WATCH_DISK_MIN_GB', 10),
+    memMaxPct: num('DESK_WATCH_MEM_MAX_PCT', 90),
+    relay: env.DESK_WATCH_RELAY !== '0',
+  };
+}
+
+// Arguments for the restarted combo tester.
+export function testerArgs(s) {
+  return ['scripts/combo/run.js', '--config', s.testerConfig, '--out', s.testerOut, '--every', String(s.testerEvery)];
+}
 
 async function up(url) {
   try {
@@ -197,7 +214,7 @@ function realChecks(s) {
         restart: () => {
           rmSync(join(outDir, 'lock'), { force: true }); // its holder is dead or not ours
           const log = openSync(join(outDir, 'run.log'), 'a');
-          const child = spawn(process.execPath, ['scripts/combo/run.js', '--config', s.testerConfig, '--out', s.testerOut, '--every', '15'],
+          const child = spawn(process.execPath, testerArgs(s),
             { cwd: s.testerRepo, detached: true, stdio: ['ignore', log, log], windowsHide: true });
           child.unref();
           Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RESTART_WAIT_MS);
@@ -214,7 +231,7 @@ function realChecks(s) {
 }
 
 async function main() {
-  const s = SETTINGS;
+  const s = readSettings();
   const prev = existsSync(s.state) ? parseState(readFileSync(s.state, 'utf8')) : {};
   const out = await runWatch({
     checks: realChecks(s),
