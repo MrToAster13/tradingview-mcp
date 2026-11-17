@@ -2,6 +2,8 @@
 
 Status: blocked (all code work that doesn't need Elijah has landed; the open questions wait on Elijah)
 
+Status update 2026-11-16 (ELI-852): three items below are out of date. `npm test` now runs the same offline runner as `npm run test:unit` (`scripts/run_offline_tests.js`), so it is safe with TradingView open; only `test:all`, `test:e2e` and `test:count` touch the live chart, because each runs `tests/e2e.test.js`. The `tests/sanitization.test.js` `C:\C:\` path bug is fixed (d80ebf7). The launch_tv_debug scripts no longer kill by name unless `KILL_EXISTING=1` is set (587aa27, ELI-696). The Gotchas line is corrected below; the other two are marked in place.
+
 ## Goal
 Elijah asked to work every ticket and task that could be done without him, using subagents, and to commit the uncommitted work. The pieces were Caddy after reboot, whether Tailscale Funnel is on, why the 10-19 and 10-20 forward check-ins produced nothing, and landing the feat/draw-trades-from-csv work. Elijah lifted the one-subagent cap on resume, so normal CLAUDE.md subagent use applies.
 
@@ -11,7 +13,7 @@ Elijah asked to work every ticket and task that could be done without him, using
   - `src/core/health.js` gets a new `isTvRunning` dep. The MSIX fallback throws instead of killing when `kill_existing` is false and TradingView was already running.
   - `src/core/trades.js` links same-second entries only by a unique shared Level ID and skips blank or zero fills.
   - `src/core/drawing.js` stops drawing the same trade twice in one run.
-- The Opus audit and the Opus re-audit were both clean, and the secrets grep was empty. `npm run test:unit` passes 273 of 273 tests but exits 1 because of the existing `tests/sanitization.test.js` `C:\C:\` path bug on main.
+- The Opus audit and the Opus re-audit were both clean, and the secrets grep was empty. `npm run test:unit` passes 273 of 273 tests but exits 1 because of the existing `tests/sanitization.test.js` `C:\C:\` path bug on main. (Out of date: fixed in d80ebf7.)
 - Caddy needs no fix. The current design retired it, and Tailscale serves :8443.
 - Funnel is on. `/mcp` returns 401 without the key. `/health` returns 200 "ok" with no auth.
 - The check-ins never ran because they were in-session timers in a session that ended. A manual rerun failed with "tab 1 (CME_MINI:MES1! 15m) not found" because the layout reopened on CBOT:ZC1! 15m. I didn't change the live chart.
@@ -49,11 +51,11 @@ Elijah asked to work every ticket and task that could be done without him, using
 - `%TEMP%\mc_fwd\snap_20261020_2026.txt` is the failed rerun log.
 
 ## Gotchas
-- Never run `npm test`, `test:all` or `test:e2e` while TradingView is open, because they wipe the live chart. Use `npm run test:unit`.
+- Never run `npm run test:all`, `npm run test:e2e` or `npm run test:count` while TradingView is open, because they wipe the live chart. `npm test` and `npm run test:unit` run the same offline suite and are safe.
 - Never run `scripts\launch_tv_debug.bat` and never kill TradingView.
 - Follow-ups not fixed yet. Each needs Elijah or the live app to verify, so I left them:
   - Nobody has verified that exports fill in Level ID. That needs a real export.
   - The PID kill closes Elijah's window if Electron's single-instance lock handed it to our process. Testing it means killing TradingView.
-  - The launch_tv_debug scripts kill by name with no check. Elijah runs them by hand, so changing them changes his bring-up.
+  - (Out of date: fixed in 587aa27, ELI-696. The scripts exit when CDP answers and kill only with `KILL_EXISTING=1`.) The launch_tv_debug scripts kill by name with no check. Elijah runs them by hand, so changing them changes his bring-up.
 - The committed HTML reports on backtest/mc-basic-1m still show the old $3 fee.
 - `e.txt` and `o.txt` in the repo root are scratch files and stay uncommitted.

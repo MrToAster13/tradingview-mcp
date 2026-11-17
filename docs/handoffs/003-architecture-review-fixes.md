@@ -20,7 +20,7 @@ Domain terms for both are in `CONTEXT.md`.
 - After cb2077c: 355 pass, 0 fail. That is 14 new tests in `tests/tv_process.test.js` and 2 that `tests/sanitization.test.js` generates for each `src/core` file.
 - After 1ba0fdd: 356 pass, 0 fail.
 
-`npm test`, `test:all` and `test:e2e` were not run. They wipe the live chart.
+`test:all` and `test:e2e` were not run, because they wipe the live chart. (Corrected 2026-11-16, ELI-852: `npm test` now runs only the offline suite and is safe with TradingView open.)
 
 ## Behaviour changes
 

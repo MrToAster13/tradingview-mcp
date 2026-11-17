@@ -6,7 +6,8 @@
 // call sites are missed, the code parses fine and only throws at runtime.
 // `no-undef` flags those statically, so CI blocks the regression at PR time.
 //
-// Globals below are the runtime APIs used across src/ (Node + browser/CDP context).
+// Globals below are the runtime APIs used across src/, scripts/ and tests/
+// (Node + browser/CDP context).
 export default [
   {
     files: ['**/*.js'],
@@ -20,6 +21,7 @@ export default [
         URLSearchParams: 'readonly', WebSocket: 'readonly', AbortController: 'readonly',
         TextEncoder: 'readonly', TextDecoder: 'readonly', global: 'readonly',
         __dirname: 'readonly', structuredClone: 'readonly',
+        AbortSignal: 'readonly', setImmediate: 'readonly', queueMicrotask: 'readonly',
       },
     },
     rules: {

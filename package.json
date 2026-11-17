@@ -4,6 +4,9 @@
   "description": "MCP bridge for TradingView Desktop via Chrome DevTools Protocol",
   "type": "module",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=20"
+  },
   "bin": {
     "tv": "src/cli/index.js"
   },
@@ -15,7 +18,7 @@
     "prepare": "node scripts/install_hooks.js",
     "start": "node src/server.js",
     "tv": "node src/cli/index.js",
-    "lint": "eslint src/",
+    "lint": "eslint src/ scripts/ tests/",
     "test": "node scripts/run_offline_tests.js",
     "test:e2e": "node --test tests/e2e.test.js",
     "test:unit": "node scripts/run_offline_tests.js",
